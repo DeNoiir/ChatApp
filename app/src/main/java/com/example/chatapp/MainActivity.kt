@@ -1,3 +1,4 @@
+// MainActivity.kt
 package com.example.chatapp
 
 import android.os.Bundle
@@ -8,9 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.chatapp.ui.chat.ChatScreen
 import com.example.chatapp.ui.filetransfer.FileTransferScreen
 import com.example.chatapp.ui.login.LoginScreen
@@ -49,22 +52,28 @@ fun ChatApp() {
                 }
             )
         }
-        composable("users/{userId}") { backStackEntry ->
+        composable(
+            route = "users/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
             UsersScreen(
+                userId = userId,
                 onUserSelected = { selectedUserId ->
                     navController.navigate("chat/$userId/$selectedUserId")
-                },
-                onDeviceSelected = { deviceId ->
-                    navController.navigate("chat/$userId/$deviceId")
                 },
                 onSettingsClick = {
                     navController.navigate("settings/$userId")
                 }
             )
         }
-
-        composable("chat/{currentUserId}/{otherUserId}") { backStackEntry ->
+        composable(
+            route = "chat/{currentUserId}/{otherUserId}",
+            arguments = listOf(
+                navArgument("currentUserId") { type = NavType.StringType },
+                navArgument("otherUserId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
             val currentUserId = backStackEntry.arguments?.getString("currentUserId") ?: return@composable
             val otherUserId = backStackEntry.arguments?.getString("otherUserId") ?: return@composable
             ChatScreen(
@@ -72,7 +81,14 @@ fun ChatApp() {
                 otherUserId = otherUserId
             )
         }
-        composable("filetransfer/{currentUserId}/{receiverId}/{fileName}") { backStackEntry ->
+        composable(
+            route = "filetransfer/{currentUserId}/{receiverId}/{fileName}",
+            arguments = listOf(
+                navArgument("currentUserId") { type = NavType.StringType },
+                navArgument("receiverId") { type = NavType.StringType },
+                navArgument("fileName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
             val currentUserId = backStackEntry.arguments?.getString("currentUserId") ?: return@composable
             val receiverId = backStackEntry.arguments?.getString("receiverId") ?: return@composable
             val fileName = backStackEntry.arguments?.getString("fileName") ?: return@composable
@@ -85,11 +101,15 @@ fun ChatApp() {
                 }
             )
         }
-        composable("settings/{userId}") { backStackEntry ->
+        composable(
+            route = "settings/{userId}",
+            arguments = listOf(navArgument("userId") { type = NavType.StringType })
+        ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
             SettingsScreen(
                 userId = userId,
                 onLogout = {
+                    ChatApplication.instance.stopDiscoveryServer()
                     navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }

@@ -20,25 +20,44 @@ class UsersViewModel @Inject constructor(
     private val _users = MutableStateFlow<List<User>>(emptyList())
     val users: StateFlow<List<User>> = _users
 
-    private val _discoveredDevices = MutableStateFlow<List<String>>(emptyList())
-    val discoveredDevices: StateFlow<List<String>> = _discoveredDevices
+    private val _discoveredUsers = MutableStateFlow<List<User>>(emptyList())
+    val discoveredUsers: StateFlow<List<User>> = _discoveredUsers
 
-    init {
-        loadUsers()
-        discoverDevices()
+    private lateinit var currentUser: User
+
+    fun initialize(userId: String) {
+        viewModelScope.launch {
+            currentUser = userRepository.getUserById(userId) ?: return@launch
+            loadUsers()
+            startDiscoveryServer()
+        }
     }
 
     private fun loadUsers() {
         viewModelScope.launch {
-            userRepository.getAllUsers().collect {
-                _users.value = it
+            userRepository.getAllUsers().collect { userList ->
+                _users.value = userList.filter { it.id != currentUser.id }
             }
         }
     }
 
     fun discoverDevices() {
         viewModelScope.launch {
-            _discoveredDevices.value = udpDiscoveryService.discoverDevices()
+            val discoveredDevices = udpDiscoveryService.discoverDevices(currentUser.id, currentUser.name)
+            val newUsers = discoveredDevices.map { (id, name) ->
+                userRepository.insertOrUpdateUser(id, name)
+                User(id = id, name = name)
+            }
+            _discoveredUsers.value = newUsers
         }
+    }
+
+    private fun startDiscoveryServer() {
+        udpDiscoveryService.startDiscoveryServer(currentUser.id, currentUser.name)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        udpDiscoveryService.stopDiscoveryServer()
     }
 }

@@ -1,7 +1,9 @@
 package com.example.chatapp.ui.login
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.chatapp.ChatApplication
 import com.example.chatapp.data.model.User
 import com.example.chatapp.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,8 +15,12 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val userRepository: UserRepository
-) : ViewModel() {
+    private val userRepository: UserRepository,
+    application: Application
+) : AndroidViewModel(application) {
+
+    private val chatApplication: ChatApplication
+        get() = getApplication() as ChatApplication
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Initial)
     val loginState: StateFlow<LoginState> = _loginState
@@ -23,6 +29,7 @@ class LoginViewModel @Inject constructor(
         viewModelScope.launch {
             val user = userRepository.getUserByName(username)
             if (user != null && user.password == password) {
+                chatApplication.setUserInfo(user.id, user.name)
                 _loginState.value = LoginState.Success(user)
             } else {
                 _loginState.value = LoginState.Error("Invalid username or password")
@@ -38,6 +45,7 @@ class LoginViewModel @Inject constructor(
             } else {
                 val newUser = User(id = UUID.randomUUID().toString(), name = username, password = password)
                 userRepository.insertUser(newUser)
+                chatApplication.setUserInfo(newUser.id, newUser.name)
                 _loginState.value = LoginState.Success(newUser)
             }
         }

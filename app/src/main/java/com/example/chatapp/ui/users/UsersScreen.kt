@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -19,20 +20,24 @@ import com.example.chatapp.data.model.User
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UsersScreen(
+    userId: String,
     viewModel: UsersViewModel = hiltViewModel(),
     onUserSelected: (String) -> Unit,
-    onDeviceSelected: (String) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val users by viewModel.users.collectAsState()
-    val discoveredDevices by viewModel.discoveredDevices.collectAsState()
+    val discoveredUsers by viewModel.discoveredUsers.collectAsState()
+
+    LaunchedEffect(userId) {
+        viewModel.initialize(userId)
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
-            title = { Text("Users and Devices") },
+            title = { Text("Users") },
             actions = {
                 IconButton(onClick = { viewModel.discoverDevices() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh devices")
+                    Icon(Icons.Default.Refresh, contentDescription = "Discover devices")
                 }
                 IconButton(onClick = onSettingsClick) {
                     Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -42,17 +47,17 @@ fun UsersScreen(
         LazyColumn(modifier = Modifier.weight(1f)) {
             item {
                 Text(
-                    "Discovered Devices",
+                    "Discovered Users",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(16.dp)
                 )
             }
-            items(discoveredDevices) { device ->
-                DeviceItem(device) { onDeviceSelected(device) }
+            items(discoveredUsers) { user ->
+                UserItem(user) { onUserSelected(user.id) }
             }
             item {
                 Text(
-                    "Users",
+                    "Known Users",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(16.dp)
                 )
@@ -61,21 +66,6 @@ fun UsersScreen(
                 UserItem(user) { onUserSelected(user.id) }
             }
         }
-    }
-}
-
-@Composable
-fun DeviceItem(device: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Text(
-            text = "Device: $device",
-            modifier = Modifier.padding(16.dp)
-        )
     }
 }
 
