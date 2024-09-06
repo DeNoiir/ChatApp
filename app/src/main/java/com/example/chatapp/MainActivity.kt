@@ -1,4 +1,3 @@
-// MainActivity.kt
 package com.example.chatapp
 
 import android.os.Bundle
@@ -21,6 +20,8 @@ import com.example.chatapp.ui.settings.SettingsScreen
 import com.example.chatapp.ui.users.UsersScreen
 import com.example.chatapp.ui.theme.ChatAppTheme
 import dagger.hilt.android.AndroidEntryPoint
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.chatapp.ui.users.UsersViewModel
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -42,6 +43,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun ChatApp() {
     val navController = rememberNavController()
+    val usersViewModel: UsersViewModel = hiltViewModel()
+
     NavHost(navController = navController, startDestination = "login") {
         composable("login") {
             LoginScreen(
@@ -59,6 +62,7 @@ fun ChatApp() {
             val userId = backStackEntry.arguments?.getString("userId") ?: return@composable
             UsersScreen(
                 userId = userId,
+                viewModel = usersViewModel,
                 onUserSelected = { selectedUserId ->
                     navController.navigate("chat/$userId/$selectedUserId")
                 },
@@ -78,25 +82,8 @@ fun ChatApp() {
             val otherUserId = backStackEntry.arguments?.getString("otherUserId") ?: return@composable
             ChatScreen(
                 currentUserId = currentUserId,
-                otherUserId = otherUserId
-            )
-        }
-        composable(
-            route = "filetransfer/{currentUserId}/{receiverId}/{fileName}",
-            arguments = listOf(
-                navArgument("currentUserId") { type = NavType.StringType },
-                navArgument("receiverId") { type = NavType.StringType },
-                navArgument("fileName") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val currentUserId = backStackEntry.arguments?.getString("currentUserId") ?: return@composable
-            val receiverId = backStackEntry.arguments?.getString("receiverId") ?: return@composable
-            val fileName = backStackEntry.arguments?.getString("fileName") ?: return@composable
-            FileTransferScreen(
-                currentUserId = currentUserId,
-                receiverId = receiverId,
-                fileName = fileName,
-                onTransferComplete = {
+                otherUserId = otherUserId,
+                onBackClick = {
                     navController.popBackStack()
                 }
             )
@@ -109,12 +96,17 @@ fun ChatApp() {
             SettingsScreen(
                 userId = userId,
                 onLogout = {
-                    ChatApplication.instance.stopDiscoveryServer()
                     navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }
                 }
             )
+        }
+    }
+
+    navController.addOnDestinationChangedListener { _, destination, _ ->
+        if (destination.route?.startsWith("users") == true) {
+            usersViewModel.resetConnectionState()
         }
     }
 }

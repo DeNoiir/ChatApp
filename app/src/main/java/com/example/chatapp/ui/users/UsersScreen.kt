@@ -8,14 +8,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.chatapp.data.model.User
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,24 +26,33 @@ fun UsersScreen(
 ) {
     val users by viewModel.users.collectAsState()
     val discoveredUsers by viewModel.discoveredUsers.collectAsState()
+    val chatInvitation by viewModel.chatInvitation.collectAsState()
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(userId) {
         viewModel.initialize(userId)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        TopAppBar(
-            title = { Text("Users") },
-            actions = {
-                IconButton(onClick = { viewModel.discoverDevices() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Discover devices")
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Users") },
+                actions = {
+                    IconButton(onClick = { viewModel.discoverDevices() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Discover devices")
+                    }
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
                 }
-                IconButton(onClick = onSettingsClick) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
-                }
-            }
-        )
-        LazyColumn(modifier = Modifier.weight(1f)) {
+            )
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
             item {
                 Text(
                     "Discovered Users",
@@ -53,7 +61,13 @@ fun UsersScreen(
                 )
             }
             items(discoveredUsers) { user ->
-                UserItem(user) { onUserSelected(user.id) }
+                UserItem(user) {
+                    scope.launch {
+                        if (viewModel.connectToUser(user.id)) {
+                            onUserSelected(user.id)
+                        }
+                    }
+                }
             }
             item {
                 Text(
@@ -63,9 +77,36 @@ fun UsersScreen(
                 )
             }
             items(users) { user ->
-                UserItem(user) { onUserSelected(user.id) }
+                UserItem(user) {
+                    scope.launch {
+                        if (viewModel.connectToUser(user.id)) {
+                            onUserSelected(user.id)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    chatInvitation?.let { (userId, userName) ->
+        AlertDialog(
+            onDismissRequest = { viewModel.rejectChatInvitation() },
+            title = { Text("Chat Invitation") },
+            text = { Text("$userName wants to chat with you.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.acceptChatInvitation()
+                    onUserSelected(userId)
+                }) {
+                    Text("Accept")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { viewModel.rejectChatInvitation() }) {
+                    Text("Reject")
+                }
+            }
+        )
     }
 }
 

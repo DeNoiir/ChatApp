@@ -6,11 +6,11 @@ import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 
 class MessageRepository @Inject constructor(private val messageDao: MessageDao) {
-    fun getMessagesForUser(userId: String): Flow<List<Message>> = messageDao.getMessagesForUser(userId)
+    fun getMessagesForUser(currentUserId: String, otherUserId: String): Flow<List<Message>> =
+        messageDao.getMessagesForUsers(currentUserId, otherUserId)
 
     suspend fun insertMessage(message: Message) = messageDao.insertMessage(message)
 
-    suspend fun deleteMessage(message: Message) = messageDao.deleteMessage(message)
-
-    suspend fun deleteMessageById(messageId: String) = messageDao.deleteMessageById(messageId)
+    suspend fun deleteAllMessages(currentUserId: String, otherUserId: String) =
+        messageDao.deleteAllMessages(currentUserId, otherUserId)
 }

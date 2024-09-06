@@ -19,8 +19,8 @@ class UdpDiscoveryService @Inject constructor() {
     private var serverJob: Job? = null
     private var serverSocket: DatagramSocket? = null
 
-    suspend fun discoverDevices(currentUserId: String, currentUserName: String): List<Pair<String, String>> = withContext(Dispatchers.IO) {
-        val foundDevices = mutableListOf<Pair<String, String>>()
+    suspend fun discoverDevices(currentUserId: String, currentUserName: String): List<Triple<String, String, String>> = withContext(Dispatchers.IO) {
+        val foundDevices = mutableListOf<Triple<String, String, String>>()
         DatagramSocket().use { socket ->
             socket.broadcast = true
             socket.soTimeout = 5000 // 5 seconds timeout
@@ -40,7 +40,7 @@ class UdpDiscoveryService @Inject constructor() {
                     if (message.startsWith(DISCOVERY_RESPONSE_PREFIX)) {
                         val parts = message.split(":")
                         if (parts.size == 3 && parts[1] != currentUserId) {
-                            foundDevices.add(Pair(parts[1], parts[2]))
+                            foundDevices.add(Triple(parts[1], parts[2], receivePacket.address.hostAddress))
                         }
                     }
                 }

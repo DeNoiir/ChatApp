@@ -6,15 +6,12 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages WHERE sender = :userId OR receiver = :userId ORDER BY timestamp DESC")
-    fun getMessagesForUser(userId: String): Flow<List<Message>>
+    @Query("SELECT * FROM messages WHERE (sender = :userId1 AND receiver = :userId2) OR (sender = :userId2 AND receiver = :userId1) ORDER BY timestamp ASC")
+    fun getMessagesForUsers(userId1: String, userId2: String): Flow<List<Message>>
 
     @Insert
     suspend fun insertMessage(message: Message)
 
-    @Delete
-    suspend fun deleteMessage(message: Message)
-
-    @Query("DELETE FROM messages WHERE id = :messageId")
-    suspend fun deleteMessageById(messageId: String)
+    @Query("DELETE FROM messages WHERE (sender = :userId1 AND receiver = :userId2) OR (sender = :userId2 AND receiver = :userId1)")
+    suspend fun deleteAllMessages(userId1: String, userId2: String)
 }
