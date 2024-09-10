@@ -1,29 +1,15 @@
 package com.example.chatapp.ui.users
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -35,7 +21,7 @@ import kotlinx.coroutines.launch
 fun UsersScreen(
     userId: String,
     viewModel: UsersViewModel = hiltViewModel(),
-    onUserSelected: (String) -> Unit,
+    onUserSelected: (String, String?) -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val users by viewModel.users.collectAsState()
@@ -50,7 +36,7 @@ fun UsersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Users") },
+                title = { Text("Chat App") },
                 actions = {
                     IconButton(onClick = { viewModel.discoverDevices() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Discover devices")
@@ -75,10 +61,10 @@ fun UsersScreen(
                 )
             }
             items(discoveredUsers) { user ->
-                UserItem(user) {
+                UserItem(user, viewModel.getUserIp(user.id)) {
                     scope.launch {
                         if (viewModel.connectToUser(user.id)) {
-                            onUserSelected(user.id)
+                            onUserSelected(user.id, viewModel.getUserIp(user.id))
                         }
                     }
                 }
@@ -91,10 +77,10 @@ fun UsersScreen(
                 )
             }
             items(users) { user ->
-                UserItem(user) {
+                UserItem(user, viewModel.getUserIp(user.id)) {
                     scope.launch {
                         if (viewModel.connectToUser(user.id)) {
-                            onUserSelected(user.id)
+                            onUserSelected(user.id, viewModel.getUserIp(user.id))
                         }
                     }
                 }
@@ -110,7 +96,7 @@ fun UsersScreen(
             confirmButton = {
                 Button(onClick = {
                     viewModel.acceptChatInvitation()
-                    onUserSelected(userId)
+                    onUserSelected(userId, viewModel.getUserIp(userId))
                 }) {
                     Text("Accept")
                 }
@@ -125,16 +111,31 @@ fun UsersScreen(
 }
 
 @Composable
-fun UserItem(user: User, onClick: () -> Unit) {
+fun UserItem(user: User, ip: String?, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
             .clickable(onClick = onClick)
     ) {
-        Text(
-            text = user.name,
-            modifier = Modifier.padding(16.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = user.name,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f)
+            )
+            ip?.let { ipAddress ->
+                Text(
+                    text = ipAddress,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            }
+        }
     }
 }

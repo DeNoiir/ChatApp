@@ -1,13 +1,17 @@
 package com.example.chatapp
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -21,11 +25,46 @@ import com.example.chatapp.ui.theme.ChatAppTheme
 import com.example.chatapp.ui.users.UsersScreen
 import com.example.chatapp.ui.users.UsersViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            // All permissions granted, proceed with app initialization
+            initializeApp()
+        } else {
+            // Handle the case where permissions are not granted
+            // You might want to show a dialog explaining why the permissions are necessary
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (checkPermissions()) {
+            initializeApp()
+        } else {
+            requestPermissions()
+        }
+    }
+
+    private fun checkPermissions(): Boolean {
+        return REQUIRED_PERMISSIONS.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun requestPermissions() {
+        requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
+    }
+
+    private fun initializeApp() {
         setContent {
             ChatAppTheme {
                 Surface(
@@ -36,6 +75,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        private val REQUIRED_PERMISSIONS = arrayOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        )
     }
 }
 
@@ -62,8 +108,9 @@ fun ChatApp() {
             UsersScreen(
                 userId = userId,
                 viewModel = usersViewModel,
-                onUserSelected = { selectedUserId ->
-                    navController.navigate("chat/$userId/$selectedUserId")
+                onUserSelected = { selectedUserId, selectedUserIp ->
+                    val encodedIp = URLEncoder.encode(selectedUserIp, StandardCharsets.UTF_8.toString())
+                    navController.navigate("chat/$userId/$selectedUserId/$encodedIp")
                 },
                 onSettingsClick = {
                     navController.navigate("settings/$userId")
@@ -71,17 +118,20 @@ fun ChatApp() {
             )
         }
         composable(
-            route = "chat/{currentUserId}/{otherUserId}",
+            route = "chat/{currentUserId}/{otherUserId}/{otherUserIp}",
             arguments = listOf(
                 navArgument("currentUserId") { type = NavType.StringType },
-                navArgument("otherUserId") { type = NavType.StringType }
+                navArgument("otherUserId") { type = NavType.StringType },
+                navArgument("otherUserIp") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val currentUserId = backStackEntry.arguments?.getString("currentUserId") ?: return@composable
             val otherUserId = backStackEntry.arguments?.getString("otherUserId") ?: return@composable
+            val otherUserIp = backStackEntry.arguments?.getString("otherUserIp") ?: return@composable
             ChatScreen(
                 currentUserId = currentUserId,
                 otherUserId = otherUserId,
+                otherUserIp = otherUserIp,
                 onBackClick = {
                     navController.popBackStack()
                 }
@@ -100,7 +150,7 @@ fun ChatApp() {
                     }
                 },
                 onBackClick = {
-                    navController.popBackStack() // 返回到上一个屏幕
+                    navController.popBackStack()
                 }
             )
         }

@@ -62,10 +62,13 @@ class UsersViewModel @Inject constructor(
                 val discoveredDevices = udpDiscoveryService.discoverDevices(currentUser.id, currentUser.name)
                 val newUsers = discoveredDevices.map { (id, name, ip) ->
                     userIpMap[id] = ip
-                    userRepository.insertOrUpdateUser(id, name)
                     User(id = id, name = name)
                 }
                 _discoveredUsers.value = newUsers
+                // Update the database with discovered users
+                newUsers.forEach { user ->
+                    userRepository.insertOrUpdateUser(user.id, user.name)
+                }
             } catch (e: Exception) {
                 Log.e("ChatApp: UsersViewModel", "Error discovering devices: ${e.message}")
             }
@@ -95,12 +98,16 @@ class UsersViewModel @Inject constructor(
 
     suspend fun connectToUser(userId: String): Boolean {
         return try {
-            val ipAddress = userIpMap[userId] ?: throw Exception("IP address not found for user")
-            tcpCommunicationService.connectToUser(ipAddress, currentUser.id)
+            val ip = userIpMap[userId] ?: throw Exception("IP address not found for user")
+            tcpCommunicationService.connectToUser(ip, currentUser.id)
         } catch (e: Exception) {
             Log.e("ChatApp: UsersViewModel", "Error connecting to user: ${e.message}")
             false
         }
+    }
+
+    fun getUserIp(userId: String): String? {
+        return userIpMap[userId]
     }
 
     fun acceptChatInvitation() {

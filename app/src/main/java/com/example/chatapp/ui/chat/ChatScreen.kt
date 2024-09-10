@@ -1,12 +1,13 @@
 package com.example.chatapp.ui.chat
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,14 +15,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.chatapp.data.model.Message
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
+import com.example.chatapp.network.ConnectionState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     currentUserId: String,
     otherUserId: String,
+    otherUserIp: String,
     viewModel: ChatViewModel = hiltViewModel(),
     onBackClick: () -> Unit
 ) {
@@ -29,11 +30,22 @@ fun ChatScreen(
     val otherUserName by viewModel.otherUserName.collectAsState()
     val isNavigatingBack by viewModel.isNavigatingBack.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val fileTransferProgress by viewModel.fileTransferProgress.collectAsState()
     var inputText by remember { mutableStateOf("") }
     var showFilterDialog by remember { mutableStateOf(false) }
+    var showFileTransferProgress by remember { mutableStateOf(false) }
+    var fileTransferStatus by remember { mutableStateOf<String?>(null) }
+    var showErrorDialog by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
 
-    LaunchedEffect(currentUserId, otherUserId) {
-        viewModel.loadMessages(currentUserId, otherUserId)
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.sendFile(it) }
+    }
+
+    LaunchedEffect(currentUserId, otherUserId, otherUserIp) {
+        viewModel.initialize(currentUserId, otherUserId, otherUserIp)
     }
 
     LaunchedEffect(Unit) {
@@ -46,9 +58,31 @@ fun ChatScreen(
         }
     }
 
-    BackHandler {
-        if (!isNavigatingBack) {
-            viewModel.closeChat()
+    LaunchedEffect(Unit) {
+        viewModel.fileEvent.collect { event ->
+            when (event) {
+                is FileEvent.SendingFile -> {
+                    showFileTransferProgress = true
+                    fileTransferStatus = "Preparing to send file: ${event.fileName}"
+                }
+                is FileEvent.FileSent -> {
+                    showFileTransferProgress = false
+                    fileTransferStatus = "File sent: ${event.fileName}"
+                }
+                is FileEvent.ReceivingFile -> {
+                    showFileTransferProgress = true
+                    fileTransferStatus = "Receiving file: ${event.fileName}"
+                }
+                is FileEvent.FileReceived -> {
+                    showFileTransferProgress = false
+                    fileTransferStatus = "File received and saved: ${event.fileName}"
+                }
+                is FileEvent.FileError -> {
+                    showFileTransferProgress = false
+                    errorMessage = event.error
+                    showErrorDialog = true
+                }
+            }
         }
     }
 
@@ -57,9 +91,7 @@ fun ChatScreen(
             TopAppBar(
                 title = { Text(otherUserName) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                            viewModel.closeChat()
-                    }) {
+                    IconButton(onClick = { viewModel.closeChat() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -67,7 +99,7 @@ fun ChatScreen(
                     IconButton(onClick = { showFilterDialog = true }) {
                         Icon(Icons.Default.FilterList, contentDescription = "Filter")
                     }
-                    IconButton(onClick = { viewModel.clearAllMessages(currentUserId, otherUserId) }) {
+                    IconButton(onClick = { viewModel.clearAllMessages() }) {
                         Icon(Icons.Default.Delete, contentDescription = "Clear messages")
                     }
                 }
@@ -97,19 +129,27 @@ fun ChatScreen(
                     .padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                IconButton(
+                    onClick = { filePickerLauncher.launch("*/*") },
+                    enabled = connectionState == ConnectionState.Connected
+                ) {
+                    Icon(Icons.Default.AttachFile, contentDescription = "Send File")
+                }
                 TextField(
                     value = inputText,
                     onValueChange = { inputText = it },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    enabled = connectionState == ConnectionState.Connected
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
                         if (inputText.isNotBlank()) {
-                            viewModel.sendMessage(currentUserId, otherUserId, inputText)
+                            viewModel.sendMessage(inputText)
                             inputText = ""
                         }
-                    }
+                    },
+                    enabled = connectionState == ConnectionState.Connected
                 ) {
                     Text("Send")
                 }
@@ -127,10 +167,6 @@ fun ChatScreen(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    viewModel.setFilterType(filterType)
-                                    showFilterDialog = false
-                                }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -150,6 +186,37 @@ fun ChatScreen(
             confirmButton = {}
         )
     }
+
+    if (showFileTransferProgress) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("File Transfer") },
+            text = {
+                Column {
+                    LinearProgressIndicator(
+                        progress = fileTransferProgress,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Transfer Progress: ${(fileTransferProgress * 100).toInt()}%")
+                    fileTransferStatus?.let { Text(it) }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (showErrorDialog) {
+        AlertDialog(
+            onDismissRequest = { showErrorDialog = false },
+            title = { Text("Error") },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                Button(onClick = { showErrorDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -163,10 +230,18 @@ fun MessageItem(message: Message, isCurrentUser: Boolean) {
         Card(
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            Text(
-                text = message.content,
-                modifier = Modifier.padding(8.dp)
-            )
+            when (message.type) {
+                0 -> Text(
+                    text = message.content,
+                    modifier = Modifier.padding(8.dp)
+                )
+                1 -> {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Icon(Icons.Default.InsertDriveFile, contentDescription = "File")
+                        Text(text = "File: ${message.content}")
+                    }
+                }
+            }
         }
     }
 }
