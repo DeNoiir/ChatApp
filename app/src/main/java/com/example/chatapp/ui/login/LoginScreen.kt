@@ -1,13 +1,15 @@
 package com.example.chatapp.ui.login
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun LoginScreen(
@@ -16,25 +18,13 @@ fun LoginScreen(
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val loginState by viewModel.loginState.collectAsState()
+    val usernameError by viewModel.usernameError.collectAsState()
+    val passwordError by viewModel.passwordError.collectAsState()
 
-    LaunchedEffect(viewModel) {
-        viewModel.loginState.collectLatest { state ->
-            when (state) {
-                is LoginState.Success -> {
-                    isLoading = false
-                    onLoginSuccess(state.user.id)
-                }
-                is LoginState.Error -> {
-                    isLoading = false
-                    errorMessage = state.message
-                }
-                LoginState.Initial -> {
-                    isLoading = false
-                    errorMessage = null
-                }
-            }
+    LaunchedEffect(loginState) {
+        if (loginState is LoginState.Success) {
+            onLoginSuccess((loginState as LoginState.Success).user.id)
         }
     }
 
@@ -45,48 +35,65 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        TextField(
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.Login,
+            contentDescription = "Login",
+            modifier = Modifier.size(100.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        OutlinedTextField(
             value = username,
-            onValueChange = { username = it },
+            onValueChange = {
+                username = it
+                viewModel.clearErrors()
+            },
             label = { Text("Username") },
+            isError = usernameError != null,
+            supportingText = {
+                if (usernameError != null) {
+                    Text(usernameError!!, color = MaterialTheme.colorScheme.error)
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth()
-        )
+
         Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                isLoading = true
-                errorMessage = null
-                viewModel.login(username, password)
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = {
+                password = it
+                viewModel.clearErrors()
+            },
+            label = { Text("Password") },
+            visualTransformation = PasswordVisualTransformation(),
+            isError = passwordError != null,
+            supportingText = {
+                if (passwordError != null) {
+                    Text(passwordError!!, color = MaterialTheme.colorScheme.error)
+                }
             },
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Login")
-        }
-        Spacer(modifier = Modifier.height(8.dp))
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
         Button(
-            onClick = {
-                isLoading = true
-                errorMessage = null
-                viewModel.register(username, password)
-            },
-            modifier = Modifier.fillMaxWidth()
+            onClick = { viewModel.loginOrRegister(username, password) },
+            modifier = Modifier.widthIn(min = 200.dp, max = 300.dp)
         ) {
-            Text("Register")
+            Text("Login / Register")
         }
-        if (isLoading) {
-            Spacer(modifier = Modifier.height(8.dp))
-            CircularProgressIndicator()
-        }
-        errorMessage?.let {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+
+        if (loginState is LoginState.Error) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = (loginState as LoginState.Error).message,
+                color = MaterialTheme.colorScheme.error
+            )
         }
     }
 }

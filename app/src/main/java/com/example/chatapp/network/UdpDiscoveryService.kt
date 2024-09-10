@@ -1,6 +1,6 @@
-// UdpDiscoveryService.kt
 package com.example.chatapp.network
 
+import android.util.Log
 import kotlinx.coroutines.*
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -21,32 +21,37 @@ class UdpDiscoveryService @Inject constructor() {
 
     suspend fun discoverDevices(currentUserId: String, currentUserName: String): List<Triple<String, String, String>> = withContext(Dispatchers.IO) {
         val foundDevices = mutableListOf<Triple<String, String, String>>()
-        DatagramSocket().use { socket ->
-            socket.broadcast = true
-            socket.soTimeout = 5000 // 5 seconds timeout
+        try {
+            DatagramSocket().use { socket ->
+                socket.broadcast = true
+                socket.soTimeout = 5000
 
-            val sendData = "$DISCOVERY_MESSAGE:$currentUserId:$currentUserName".toByteArray()
-            val sendPacket = DatagramPacket(sendData, sendData.size,
-                InetAddress.getByName("255.255.255.255"), DISCOVERY_PORT)
-            socket.send(sendPacket)
+                val sendData = "$DISCOVERY_MESSAGE:$currentUserId:$currentUserName".toByteArray()
+                val sendPacket = DatagramPacket(sendData, sendData.size,
+                    InetAddress.getByName("255.255.255.255"), DISCOVERY_PORT)
+                socket.send(sendPacket)
 
-            val receiveData = ByteArray(BUFFER_SIZE)
-            val receivePacket = DatagramPacket(receiveData, receiveData.size)
+                val receiveData = ByteArray(BUFFER_SIZE)
+                val receivePacket = DatagramPacket(receiveData, receiveData.size)
 
-            try {
                 while (true) {
-                    socket.receive(receivePacket)
-                    val message = String(receivePacket.data, 0, receivePacket.length)
-                    if (message.startsWith(DISCOVERY_RESPONSE_PREFIX)) {
-                        val parts = message.split(":")
-                        if (parts.size == 3 && parts[1] != currentUserId) {
-                            foundDevices.add(Triple(parts[1], parts[2], receivePacket.address.hostAddress))
+                    try {
+                        socket.receive(receivePacket)
+                        val message = String(receivePacket.data, 0, receivePacket.length)
+                        if (message.startsWith(DISCOVERY_RESPONSE_PREFIX)) {
+                            val parts = message.split(":")
+                            if (parts.size == 3 && parts[1] != currentUserId) {
+                                foundDevices.add(Triple(parts[1], parts[2], receivePacket.address.hostAddress) as Triple<String, String, String>)
+                            }
                         }
+                    } catch (e: Exception) {
+                        Log.e("ChatApp: UdpDiscoveryService", "Error receiving UDP packet: ${e.message}")
+                        break
                     }
                 }
-            } catch (e: Exception) {
-                // Timeout or error occurred, discovery is complete
             }
+        } catch (e: Exception) {
+            Log.e("ChatApp: UdpDiscoveryService", "Error in device discovery: ${e.message}")
         }
         foundDevices
     }
@@ -54,7 +59,6 @@ class UdpDiscoveryService @Inject constructor() {
     @Synchronized
     fun startDiscoveryServer(currentUserId: String, currentUserName: String) {
         if (serverJob?.isActive == true) {
-            // Server is already running
             return
         }
 
@@ -75,12 +79,13 @@ class UdpDiscoveryService @Inject constructor() {
                             serverSocket?.send(responsePacket)
                         }
                     } catch (e: Exception) {
-                        // Handle exceptions
+                        Log.e("ChatApp: UdpDiscoveryService", "Error in discovery server: ${e.message}")
                     }
                 }
             } catch (e: BindException) {
-                // Handle the case where the port is already in use
-                println("Failed to start discovery server: ${e.message}")
+                Log.e("ChatApp: UdpDiscoveryService", "Failed to start discovery server: ${e.message}")
+            } catch (e: Exception) {
+                Log.e("ChatApp: UdpDiscoveryService", "Unexpected error in discovery server: ${e.message}")
             } finally {
                 serverSocket?.close()
             }
@@ -92,5 +97,6 @@ class UdpDiscoveryService @Inject constructor() {
         serverJob?.cancel()
         serverSocket?.close()
         serverSocket = null
+        Log.d("ChatApp: UdpDiscoveryService", "Discovery server stopped")
     }
 }

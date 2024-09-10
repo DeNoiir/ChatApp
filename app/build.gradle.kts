@@ -111,4 +111,7 @@ dependencies {
 
     //Datastore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    //Apache IO
+    implementation("commons-io:commons-io:2.16.1")
 }

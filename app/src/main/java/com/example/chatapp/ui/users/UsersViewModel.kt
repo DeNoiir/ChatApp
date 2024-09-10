@@ -1,10 +1,10 @@
 package com.example.chatapp.ui.users
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.model.User
 import com.example.chatapp.data.repository.UserRepository
-import com.example.chatapp.network.ConnectionState
 import com.example.chatapp.network.TcpCommunicationService
 import com.example.chatapp.network.UdpDiscoveryService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,74 +28,106 @@ class UsersViewModel @Inject constructor(
     private val _chatInvitation = MutableStateFlow<Pair<String, String>?>(null)
     val chatInvitation: StateFlow<Pair<String, String>?> = _chatInvitation
 
-    val connectionState = tcpCommunicationService.connectionState
-
     private lateinit var currentUser: User
     private val userIpMap = mutableMapOf<String, String>()
 
     fun initialize(userId: String) {
         viewModelScope.launch {
-            currentUser = userRepository.getUserById(userId) ?: return@launch
-            loadUsers()
-            startDiscoveryServer()
-            startTcpServer()
+            try {
+                currentUser = userRepository.getUserById(userId) ?: throw Exception("User not found")
+                loadUsers()
+                startDiscoveryServer()
+                startTcpServer()
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error initializing: ${e.message}")
+            }
         }
     }
 
     private fun loadUsers() {
         viewModelScope.launch {
-            userRepository.getAllUsers().collect { userList ->
-                _users.value = userList.filter { it.id != currentUser.id }
+            try {
+                userRepository.getAllUsers().collect { userList ->
+                    _users.value = userList.filter { it.id != currentUser.id }
+                }
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error loading users: ${e.message}")
             }
         }
     }
 
     fun discoverDevices() {
         viewModelScope.launch {
-            val discoveredDevices = udpDiscoveryService.discoverDevices(currentUser.id, currentUser.name)
-            val newUsers = discoveredDevices.map { (id, name, ip) ->
-                userIpMap[id] = ip
-                userRepository.insertOrUpdateUser(id, name)
-                User(id = id, name = name)
+            try {
+                val discoveredDevices = udpDiscoveryService.discoverDevices(currentUser.id, currentUser.name)
+                val newUsers = discoveredDevices.map { (id, name, ip) ->
+                    userIpMap[id] = ip
+                    userRepository.insertOrUpdateUser(id, name)
+                    User(id = id, name = name)
+                }
+                _discoveredUsers.value = newUsers
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error discovering devices: ${e.message}")
             }
-            _discoveredUsers.value = newUsers
         }
     }
 
     private fun startDiscoveryServer() {
         udpDiscoveryService.startDiscoveryServer(currentUser.id, currentUser.name)
+        Log.d("ChatApp: UsersViewModel", "Discovery server started")
     }
 
     private fun startTcpServer() {
         tcpCommunicationService.startServer { userId ->
             viewModelScope.launch {
-                val user = userRepository.getUserById(userId)
-                if (user != null) {
-                    _chatInvitation.value = Pair(userId, user.name)
+                try {
+                    val user = userRepository.getUserById(userId)
+                    if (user != null) {
+                        _chatInvitation.value = Pair(userId, user.name)
+                    }
+                } catch (e: Exception) {
+                    Log.e("ChatApp: UsersViewModel", "Error handling chat invitation: ${e.message}")
                 }
             }
         }
+        Log.d("ChatApp: UsersViewModel", "TCP server started")
     }
 
     suspend fun connectToUser(userId: String): Boolean {
-        val ipAddress = userIpMap[userId] ?: return false
-        return tcpCommunicationService.connectToUser(ipAddress, currentUser.id)
+        return try {
+            val ipAddress = userIpMap[userId] ?: throw Exception("IP address not found for user")
+            tcpCommunicationService.connectToUser(ipAddress, currentUser.id)
+        } catch (e: Exception) {
+            Log.e("ChatApp: UsersViewModel", "Error connecting to user: ${e.message}")
+            false
+        }
     }
 
     fun acceptChatInvitation() {
         _chatInvitation.value = null
+        Log.d("ChatApp: UsersViewModel", "Chat invitation accepted")
     }
 
     fun rejectChatInvitation() {
         _chatInvitation.value = null
         viewModelScope.launch {
-            tcpCommunicationService.closeConnection()
+            try {
+                tcpCommunicationService.closeConnection()
+                Log.d("ChatApp: UsersViewModel", "Chat invitation rejected and connection closed")
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error rejecting chat invitation: ${e.message}")
+            }
         }
     }
 
     fun resetConnectionState() {
         viewModelScope.launch {
-            tcpCommunicationService.closeConnection()
+            try {
+                tcpCommunicationService.closeConnection()
+                Log.d("ChatApp: UsersViewModel", "Connection state reset")
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error resetting connection state: ${e.message}")
+            }
         }
     }
 
@@ -103,7 +135,12 @@ class UsersViewModel @Inject constructor(
         super.onCleared()
         udpDiscoveryService.stopDiscoveryServer()
         viewModelScope.launch {
-            tcpCommunicationService.closeConnection()
+            try {
+                tcpCommunicationService.closeConnection()
+                Log.d("ChatApp: UsersViewModel", "ViewModel cleared, services stopped")
+            } catch (e: Exception) {
+                Log.e("ChatApp: UsersViewModel", "Error clearing ViewModel: ${e.message}")
+            }
         }
     }
 }

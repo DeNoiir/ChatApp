@@ -21,13 +21,24 @@ class SettingsViewModel @Inject constructor(
     private val _settingsState = MutableStateFlow<SettingsState>(SettingsState.Initial)
     val settingsState: StateFlow<SettingsState> = _settingsState
 
+    private val _oldPasswordError = MutableStateFlow<String?>(null)
+    val oldPasswordError: StateFlow<String?> = _oldPasswordError
+
+    private val _newPasswordError = MutableStateFlow<String?>(null)
+    val newPasswordError: StateFlow<String?> = _newPasswordError
+
     fun loadUser(userId: String) {
         viewModelScope.launch {
             _user.value = userRepository.getUserById(userId)
         }
     }
 
-    fun updatePassword(userId: String, oldPassword: String, newPassword: String) {
+    fun updatePassword(userId: String, oldPassword: String, newPassword: String, onComplete: () -> Unit) {
+        if (!validateInput(oldPassword, newPassword)) {
+            onComplete()
+            return
+        }
+
         viewModelScope.launch {
             val currentUser = userRepository.getUserById(userId)
             if (currentUser != null && currentUser.password == oldPassword) {
@@ -38,12 +49,38 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _settingsState.value = SettingsState.Error("Invalid old password")
             }
+            onComplete()
         }
+    }
+
+    private fun validateInput(oldPassword: String, newPassword: String): Boolean {
+        var isValid = true
+
+        if (oldPassword.isBlank()) {
+            _oldPasswordError.value = "Old password cannot be empty"
+            isValid = false
+        } else {
+            _oldPasswordError.value = null
+        }
+
+        if (newPassword.length < 6) {
+            _newPasswordError.value = "New password must be at least 6 characters long"
+            isValid = false
+        } else {
+            _newPasswordError.value = null
+        }
+
+        return isValid
+    }
+
+    fun clearErrors() {
+        _oldPasswordError.value = null
+        _newPasswordError.value = null
     }
 }
 
 sealed class SettingsState {
-    object Initial : SettingsState()
-    object PasswordUpdated : SettingsState()
+    data object Initial : SettingsState()
+    data object PasswordUpdated : SettingsState()
     data class Error(val message: String) : SettingsState()
 }

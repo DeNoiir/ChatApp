@@ -1,9 +1,7 @@
 package com.example.chatapp.ui.login
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.chatapp.ChatApplication
 import com.example.chatapp.data.model.User
 import com.example.chatapp.data.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,45 +13,67 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LoginViewModel @Inject constructor(
-    private val userRepository: UserRepository,
-    application: Application
-) : AndroidViewModel(application) {
-
-    private val chatApplication: ChatApplication
-        get() = getApplication() as ChatApplication
+    private val userRepository: UserRepository
+) : ViewModel() {
 
     private val _loginState = MutableStateFlow<LoginState>(LoginState.Initial)
     val loginState: StateFlow<LoginState> = _loginState
 
-    fun login(username: String, password: String) {
-        viewModelScope.launch {
-            val user = userRepository.getUserByName(username)
-            if (user != null && user.password == password) {
-                chatApplication.setUserInfo(user.id, user.name)
-                _loginState.value = LoginState.Success(user)
-            } else {
-                _loginState.value = LoginState.Error("Invalid username or password")
-            }
-        }
-    }
+    private val _usernameError = MutableStateFlow<String?>(null)
+    val usernameError: StateFlow<String?> = _usernameError
 
-    fun register(username: String, password: String) {
+    private val _passwordError = MutableStateFlow<String?>(null)
+    val passwordError: StateFlow<String?> = _passwordError
+
+    fun loginOrRegister(username: String, password: String) {
+        if (!validateInput(username, password)) return
+
         viewModelScope.launch {
             val existingUser = userRepository.getUserByName(username)
             if (existingUser != null) {
-                _loginState.value = LoginState.Error("Username already exists")
+                // Login
+                if (existingUser.password == password) {
+                    _loginState.value = LoginState.Success(existingUser)
+                } else {
+                    _loginState.value = LoginState.Error("Incorrect password")
+                }
             } else {
+                // Register
                 val newUser = User(id = UUID.randomUUID().toString(), name = username, password = password)
                 userRepository.insertUser(newUser)
-                chatApplication.setUserInfo(newUser.id, newUser.name)
                 _loginState.value = LoginState.Success(newUser)
             }
         }
     }
+
+    private fun validateInput(username: String, password: String): Boolean {
+        var isValid = true
+
+        if (username.length < 3) {
+            _usernameError.value = "Username must be at least 3 characters long"
+            isValid = false
+        } else {
+            _usernameError.value = null
+        }
+
+        if (password.length < 6) {
+            _passwordError.value = "Password must be at least 6 characters long"
+            isValid = false
+        } else {
+            _passwordError.value = null
+        }
+
+        return isValid
+    }
+
+    fun clearErrors() {
+        _usernameError.value = null
+        _passwordError.value = null
+    }
 }
 
 sealed class LoginState {
-    object Initial : LoginState()
+    data object Initial : LoginState()
     data class Success(val user: User) : LoginState()
     data class Error(val message: String) : LoginState()
 }
