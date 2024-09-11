@@ -5,11 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.model.User
 import com.example.chatapp.data.repository.UserRepository
+import com.example.chatapp.network.MessageType
 import com.example.chatapp.network.TcpCommunicationService
 import com.example.chatapp.network.UdpDiscoveryService
+import com.example.chatapp.network.ChatEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,14 +23,24 @@ class UsersViewModel @Inject constructor(
     private val udpDiscoveryService: UdpDiscoveryService,
     private val tcpCommunicationService: TcpCommunicationService
 ) : ViewModel() {
+
     private val _users = MutableStateFlow<List<User>>(emptyList())
     val users: StateFlow<List<User>> = _users
 
     private val _discoveredUsers = MutableStateFlow<List<User>>(emptyList())
     val discoveredUsers: StateFlow<List<User>> = _discoveredUsers
 
-    private val _chatInvitation = MutableStateFlow<Pair<String, String>?>(null)
-    val chatInvitation: StateFlow<Pair<String, String>?> = _chatInvitation
+    private val _chatInvitationState = MutableStateFlow<ChatInvitationState>(ChatInvitationState.None)
+    val chatInvitationState: StateFlow<ChatInvitationState> = _chatInvitationState
+
+    private val _chatEvent = MutableSharedFlow<ChatEvent>()
+    val chatEvent = _chatEvent.asSharedFlow()
+
+    private val _navigateToChatEvent = MutableSharedFlow<String>()
+    val navigateToChatEvent = _navigateToChatEvent.asSharedFlow()
+
+    private val _showRejectionDialog = MutableStateFlow(false)
+    val showRejectionDialog: StateFlow<Boolean> = _showRejectionDialog
 
     private lateinit var currentUser: User
 
@@ -37,6 +51,7 @@ class UsersViewModel @Inject constructor(
                 loadUsers()
                 startDiscoveryServer()
                 startTcpServer()
+                collectTcpEvents()
             } catch (e: Exception) {
                 Log.e("ChatApp: UsersViewModel", "Error initializing: ${e.message}")
             }
@@ -45,12 +60,8 @@ class UsersViewModel @Inject constructor(
 
     private fun loadUsers() {
         viewModelScope.launch {
-            try {
-                userRepository.getAllUsers().collect { userList ->
-                    _users.value = userList.filter { it.id != currentUser.id }
-                }
-            } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error loading users: ${e.message}")
+            userRepository.getAllUsers().collect { userList ->
+                _users.value = userList.filter { it.id != currentUser.id }
             }
         }
     }
@@ -74,65 +85,83 @@ class UsersViewModel @Inject constructor(
 
     private fun startDiscoveryServer() {
         udpDiscoveryService.startDiscoveryServer(currentUser.id, currentUser.name)
-        Log.d("ChatApp: UsersViewModel", "Discovery server started")
     }
 
     private fun startTcpServer() {
-        tcpCommunicationService.startServer { userId ->
+        tcpCommunicationService.startServer { userId, userName ->
             viewModelScope.launch {
-                try {
-                    val user = userRepository.getUserById(userId)
-                    if (user != null) {
-                        _chatInvitation.value = Pair(userId, user.name)
+                _chatInvitationState.value = ChatInvitationState.Received(userId, userName)
+            }
+        }
+    }
+
+    private fun collectTcpEvents() {
+        viewModelScope.launch {
+            tcpCommunicationService.chatEvent.collect { event ->
+                when (event) {
+                    is ChatEvent.ChatInvitationResponse -> {
+                        if (event.accepted) {
+                            val otherUserId = (_chatInvitationState.value as? ChatInvitationState.Sent)?.userId
+                            if (otherUserId != null) {
+                                _navigateToChatEvent.emit(otherUserId)
+                            }
+                        } else {
+                            _showRejectionDialog.value = true
+                        }
+                        _chatInvitationState.value = ChatInvitationState.None
                     }
-                } catch (e: Exception) {
-                    Log.e("ChatApp: UsersViewModel", "Error handling chat invitation: ${e.message}")
+                    else -> _chatEvent.emit(event)
                 }
             }
         }
-        Log.d("ChatApp: UsersViewModel", "TCP server started")
     }
 
-    suspend fun connectToUser(userId: String): Boolean {
-        return try {
-            val ip = udpDiscoveryService.getUserIp(userId) ?: throw Exception("IP address not found for user")
-            tcpCommunicationService.connectToUser(ip, currentUser.id)
-        } catch (e: Exception) {
-            Log.e("ChatApp: UsersViewModel", "Error connecting to user: ${e.message}")
-            false
+    fun sendChatInvitation(userId: String) {
+        viewModelScope.launch {
+            try {
+                val ip = udpDiscoveryService.getUserIp(userId)
+                if (ip != null && tcpCommunicationService.connectToUser(ip, currentUser.id, currentUser.name)) {
+                    _chatInvitationState.value = ChatInvitationState.Sent(userId)
+                } else {
+                    _chatInvitationState.value = ChatInvitationState.Error("Failed to connect to user")
+                }
+            } catch (e: Exception) {
+                _chatInvitationState.value = ChatInvitationState.Error("Error sending chat invitation: ${e.message}")
+            }
         }
     }
 
-    fun getUserIp(userId: String): String? {
-        return udpDiscoveryService.getUserIp(userId)
+    fun viewChatHistory(userId: String) {
+        viewModelScope.launch {
+            _navigateToChatEvent.emit(userId)
+        }
     }
 
     fun acceptChatInvitation() {
-        _chatInvitation.value = null
-        Log.d("ChatApp: UsersViewModel", "Chat invitation accepted")
+        viewModelScope.launch {
+            val state = _chatInvitationState.value
+            if (state is ChatInvitationState.Received) {
+                tcpCommunicationService.sendMessage(MessageType.CHAT_INVITATION_RESPONSE, true)
+                _chatInvitationState.value = ChatInvitationState.None
+                _navigateToChatEvent.emit(state.userId)
+            }
+        }
     }
 
     fun rejectChatInvitation() {
-        _chatInvitation.value = null
         viewModelScope.launch {
-            try {
-                tcpCommunicationService.closeConnection()
-                Log.d("ChatApp: UsersViewModel", "Chat invitation rejected and connection closed")
-            } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error rejecting chat invitation: ${e.message}")
-            }
+            tcpCommunicationService.sendMessage(MessageType.CHAT_INVITATION_RESPONSE, false)
+            tcpCommunicationService.closeConnection()
+            _chatInvitationState.value = ChatInvitationState.None
         }
     }
 
-    fun resetConnectionState() {
-        viewModelScope.launch {
-            try {
-                tcpCommunicationService.closeConnection()
-                Log.d("ChatApp: UsersViewModel", "Connection state reset")
-            } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error resetting connection state: ${e.message}")
-            }
-        }
+    fun resetChatInvitationState() {
+        _chatInvitationState.value = ChatInvitationState.None
+    }
+
+    fun dismissRejectionDialog() {
+        _showRejectionDialog.value = false
     }
 
     override fun onCleared() {
@@ -140,12 +169,14 @@ class UsersViewModel @Inject constructor(
         udpDiscoveryService.stopDiscoveryServer()
         udpDiscoveryService.clearDiscoveredUsers()
         viewModelScope.launch {
-            try {
-                tcpCommunicationService.closeConnection()
-                Log.d("ChatApp: UsersViewModel", "ViewModel cleared, services stopped")
-            } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error clearing ViewModel: ${e.message}")
-            }
+            tcpCommunicationService.closeConnection()
         }
     }
+}
+
+sealed class ChatInvitationState {
+    object None : ChatInvitationState()
+    data class Sent(val userId: String) : ChatInvitationState()
+    data class Received(val userId: String, val userName: String) : ChatInvitationState()
+    data class Error(val message: String) : ChatInvitationState()
 }

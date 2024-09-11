@@ -33,7 +33,7 @@ class LoginViewModel @Inject constructor(
             if (existingUser != null) {
                 // Login
                 if (existingUser.password == password) {
-                    _loginState.value = LoginState.Success(existingUser)
+                    _loginState.value = LoginState.LoginSuccess(existingUser)
                 } else {
                     _loginState.value = LoginState.Error("Incorrect password")
                 }
@@ -41,7 +41,7 @@ class LoginViewModel @Inject constructor(
                 // Register
                 val newUser = User(id = UUID.randomUUID().toString(), name = username, password = password)
                 userRepository.insertUser(newUser)
-                _loginState.value = LoginState.Success(newUser)
+                _loginState.value = LoginState.RegisterSuccess(newUser)
             }
         }
     }
@@ -70,10 +70,15 @@ class LoginViewModel @Inject constructor(
         _usernameError.value = null
         _passwordError.value = null
     }
+
+    fun clearLoginState() {
+        _loginState.value = LoginState.Initial
+    }
 }
 
 sealed class LoginState {
     data object Initial : LoginState()
-    data class Success(val user: User) : LoginState()
+    data class LoginSuccess(val user: User) : LoginState()
+    data class RegisterSuccess(val user: User) : LoginState()
     data class Error(val message: String) : LoginState()
 }

@@ -23,8 +23,14 @@ fun LoginScreen(
     val passwordError by viewModel.passwordError.collectAsState()
 
     LaunchedEffect(loginState) {
-        if (loginState is LoginState.Success) {
-            onLoginSuccess((loginState as LoginState.Success).user.id)
+        when (loginState) {
+            is LoginState.LoginSuccess -> {
+                onLoginSuccess((loginState as LoginState.LoginSuccess).user.id)
+            }
+            is LoginState.RegisterSuccess -> {
+                // Do not navigate immediately, wait for user to dismiss the dialog
+            }
+            else -> {}
         }
     }
 
@@ -95,5 +101,23 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.error
             )
         }
+    }
+
+    if (loginState is LoginState.RegisterSuccess) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Registration Successful") },
+            text = { Text("Your account has been created successfully.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearLoginState()
+                        onLoginSuccess((loginState as LoginState.RegisterSuccess).user.id)
+                    }
+                ) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }

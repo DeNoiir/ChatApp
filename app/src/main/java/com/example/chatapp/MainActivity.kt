@@ -25,8 +25,6 @@ import com.example.chatapp.ui.theme.ChatAppTheme
 import com.example.chatapp.ui.users.UsersScreen
 import com.example.chatapp.ui.users.UsersViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -36,7 +34,6 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            // All permissions granted, proceed with app initialization
             initializeApp()
         } else {
             // Handle the case where permissions are not granted
@@ -80,7 +77,10 @@ class MainActivity : ComponentActivity() {
     companion object {
         private val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            Manifest.permission.INTERNET,
+            Manifest.permission.ACCESS_NETWORK_STATE,
+            Manifest.permission.ACCESS_WIFI_STATE
         )
     }
 }
@@ -108,9 +108,8 @@ fun ChatApp() {
             UsersScreen(
                 userId = userId,
                 viewModel = usersViewModel,
-                onUserSelected = { selectedUserId, selectedUserIp ->
-                    val encodedIp = URLEncoder.encode(selectedUserIp, StandardCharsets.UTF_8.toString())
-                    navController.navigate("chat/$userId/$selectedUserId/$encodedIp")
+                onNavigateToChat = { otherUserId, isReadOnly ->
+                    navController.navigate("chat/$userId/$otherUserId/$isReadOnly")
                 },
                 onSettingsClick = {
                     navController.navigate("settings/$userId")
@@ -118,20 +117,20 @@ fun ChatApp() {
             )
         }
         composable(
-            route = "chat/{currentUserId}/{otherUserId}/{otherUserIp}",
+            route = "chat/{currentUserId}/{otherUserId}/{isReadOnly}",
             arguments = listOf(
                 navArgument("currentUserId") { type = NavType.StringType },
                 navArgument("otherUserId") { type = NavType.StringType },
-                navArgument("otherUserIp") { type = NavType.StringType }
+                navArgument("isReadOnly") { type = NavType.BoolType }
             )
         ) { backStackEntry ->
             val currentUserId = backStackEntry.arguments?.getString("currentUserId") ?: return@composable
             val otherUserId = backStackEntry.arguments?.getString("otherUserId") ?: return@composable
-            val otherUserIp = backStackEntry.arguments?.getString("otherUserIp") ?: return@composable
+            val isReadOnly = backStackEntry.arguments?.getBoolean("isReadOnly") ?: false
             ChatScreen(
                 currentUserId = currentUserId,
                 otherUserId = otherUserId,
-                otherUserIp = otherUserIp,
+                isReadOnly = isReadOnly,
                 onBackClick = {
                     navController.popBackStack()
                 }
@@ -153,12 +152,6 @@ fun ChatApp() {
                     navController.popBackStack()
                 }
             )
-        }
-    }
-
-    navController.addOnDestinationChangedListener { _, destination, _ ->
-        if (destination.route?.startsWith("users") == true) {
-            usersViewModel.resetConnectionState()
         }
     }
 }

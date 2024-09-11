@@ -6,7 +6,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import java.io.*
 import java.net.ServerSocket
 import java.net.Socket
@@ -23,16 +22,16 @@ class TcpCommunicationService @Inject constructor() {
     private var serverJob: Job? = null
     private var readJob: Job? = null
 
-    private val _messageReceived = MutableSharedFlow<Pair<Byte, String>>()
+    private val _messageReceived = MutableSharedFlow<NetworkMessage>()
     val messageReceived = _messageReceived.asSharedFlow()
-
-    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
-    val connectionState = _connectionState.asStateFlow()
 
     private val _fileTransferProgress = MutableStateFlow<Float>(0f)
     val fileTransferProgress = _fileTransferProgress.asStateFlow()
 
-    fun startServer(onInvitationReceived: (String) -> Unit) {
+    private val _chatEvent = MutableSharedFlow<ChatEvent>()
+    val chatEvent = _chatEvent.asSharedFlow()
+
+    fun startServer(onInvitationReceived: (String, String) -> Unit) {
         serverJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 serverSocket = ServerSocket(TCP_PORT)
@@ -46,7 +45,7 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
-    private suspend fun handleClient(socket: Socket, onInvitationReceived: (String) -> Unit) {
+    private suspend fun handleClient(socket: Socket, onInvitationReceived: (String, String) -> Unit) {
         withContext(Dispatchers.IO) {
             clientSocket = socket
             inputStream = DataInputStream(socket.getInputStream())
@@ -54,17 +53,16 @@ class TcpCommunicationService @Inject constructor() {
 
             try {
                 val messageType = inputStream?.readByte()
-                if (messageType == 0x01.toByte()) {
+                if (messageType == MessageType.CHAT_INVITATION.value) {
                     val userId = inputStream?.readUTF()
-                    if (userId != null) {
-                        onInvitationReceived(userId)
+                    val userName = inputStream?.readUTF()
+                    if (userId != null && userName != null) {
+                        onInvitationReceived(userId, userName)
                     }
                 }
-
-                _connectionState.value = ConnectionState.Connected
                 startReading()
-
             } catch (e: Exception) {
+                Log.e("TcpCommunicationService", "Error handling client: ${e.message}")
                 closeConnection()
             }
         }
@@ -75,26 +73,79 @@ class TcpCommunicationService @Inject constructor() {
             try {
                 while (isActive) {
                     val messageType = inputStream?.readByte() ?: break
-                    val message = inputStream?.readUTF() ?: break
-                    if (messageType == 0x09.toByte()) {
-                        break
+                    when (MessageType.fromByte(messageType)) {
+                        MessageType.CHAT_MESSAGE -> {
+                            val content = inputStream?.readUTF() ?: break
+                            _messageReceived.emit(NetworkMessage.ChatMessage(content))
+                        }
+                        MessageType.FILE_TRANSFER_REQUEST -> {
+                            val fileName = inputStream?.readUTF() ?: break
+                            val fileSize = inputStream?.readLong() ?: break
+                            _messageReceived.emit(NetworkMessage.FileTransferRequest(fileName, fileSize))
+                        }
+                        MessageType.FILE_TRANSFER_RESPONSE -> {
+                            val accepted = inputStream?.readBoolean() ?: break
+                            _messageReceived.emit(NetworkMessage.FileTransferResponse(accepted))
+                        }
+                        MessageType.FILE_DATA -> {
+                            val fileSize = inputStream?.readLong() ?: break
+                            _messageReceived.emit(NetworkMessage.FileData(fileSize, readFileData()))
+                        }
+                        MessageType.END_CHAT -> {
+                            _chatEvent.emit(ChatEvent.ChatEnded)
+                            break
+                        }
+                        MessageType.CHAT_INVITATION_RESPONSE -> {
+                            val accepted = inputStream?.readBoolean() ?: break
+                            _chatEvent.emit(ChatEvent.ChatInvitationResponse(accepted))
+                        }
+                        MessageType.FILE_TRANSFER_COMPLETED -> {
+                            val fileName = inputStream?.readUTF() ?: break
+                            _messageReceived.emit(NetworkMessage.FileTransferCompleted(fileName))
+                        }
+                        MessageType.FILE_RECEIVED_NOTIFICATION -> {
+                            val fileName = inputStream?.readUTF() ?: break
+                            _messageReceived.emit(NetworkMessage.FileReceivedNotification(fileName))
+                        }
+                        else -> break
                     }
-                    _messageReceived.emit(Pair(messageType, message))
                 }
+            } catch (e: Exception) {
+                Log.e("TcpCommunicationService", "Error reading messages: ${e.message}")
             } finally {
                 closeConnection()
             }
         }
     }
 
-    suspend fun connectToUser(ipAddress: String, userId: String): Boolean {
+    private suspend fun readFileData(): ByteArray = withContext(Dispatchers.IO) {
+        val baos = ByteArrayOutputStream()
+        var totalBytesRead = 0L
+        while (true) {
+            val chunkSize = inputStream?.readInt() ?: break
+            if (chunkSize <= 0) break // End of file transfer
+            val buffer = ByteArray(chunkSize)
+            var bytesRead = 0
+            while (bytesRead < chunkSize) {
+                val result = inputStream?.read(buffer, bytesRead, chunkSize - bytesRead) ?: -1
+                if (result == -1) break
+                bytesRead += result
+            }
+            baos.write(buffer, 0, bytesRead)
+            totalBytesRead += bytesRead
+            _fileTransferProgress.value = totalBytesRead.toFloat() / chunkSize
+        }
+        _fileTransferProgress.value = 1f
+        baos.toByteArray()
+    }
+
+    suspend fun connectToUser(ipAddress: String, userId: String, userName: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
                 clientSocket = Socket(ipAddress, TCP_PORT)
                 outputStream = DataOutputStream(clientSocket?.getOutputStream())
                 inputStream = DataInputStream(clientSocket?.getInputStream())
-                sendMessage(0x01.toByte(), userId)
-                _connectionState.value = ConnectionState.Connected
+                sendMessage(MessageType.CHAT_INVITATION, userId, userName)
                 startReading()
                 true
             } catch (e: Exception) {
@@ -104,117 +155,66 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
-    suspend fun sendMessage(type: Byte, message: String) = withContext(Dispatchers.IO) {
-        outputStream?.writeByte(type.toInt())
-        outputStream?.writeUTF(message)
-        outputStream?.flush()
-    }
-
-    suspend fun sendFileSize(fileSize: Long) = withContext(Dispatchers.IO) {
+    suspend fun sendMessage(type: MessageType, vararg params: Any) = withContext(Dispatchers.IO) {
         try {
-            Log.d("TcpCommunicationService", "Sending file size: $fileSize bytes")
-            sendMessage(0x0B.toByte(), fileSize.toString())
-            Log.d("TcpCommunicationService", "File size sent: $fileSize")
-        } catch (e: Exception) {
-            Log.e("TcpCommunicationService", "Error sending file size: ${e.message}")
-            throw e
-        }
-    }
-
-    suspend fun sendFileData(inputStream: InputStream, fileSize: Long) = withContext(Dispatchers.IO) {
-        try {
-            Log.d("TcpCommunicationService", "Starting to send file data, size: $fileSize bytes")
-
-            var totalBytesSent: Long = 0
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream?.write(buffer, 0, bytesRead)
-                totalBytesSent += bytesRead
-                _fileTransferProgress.value = totalBytesSent.toFloat() / fileSize
-                Log.d("TcpCommunicationService", "Sent $totalBytesSent bytes out of $fileSize")
-            }
-
-            outputStream?.flush()
-            Log.d("TcpCommunicationService", "File send complete. Total sent: $totalBytesSent")
-        } catch (e: Exception) {
-            Log.e("TcpCommunicationService", "Error sending file data: ${e.message}")
-            throw e
-        } finally {
-            _fileTransferProgress.value = 0f
-        }
-    }
-
-    suspend fun receiveFileSize(): Long = withContext(Dispatchers.IO) {
-        try {
-            val (_, fileSizeString) = _messageReceived.first { (type, _) -> type == 0x0B.toByte() }
-            val fileSize = fileSizeString.toLong()
-            Log.d("TcpCommunicationService", "Received file size: $fileSize bytes")
-            return@withContext fileSize
-        } catch (e: Exception) {
-            Log.e("TcpCommunicationService", "Error receiving file size: ${e.message}")
-            throw e
-        }
-    }
-
-    suspend fun receiveFileData(tempFile: File, fileSize: Long) = withContext(Dispatchers.IO) {
-        try {
-            Log.d("TcpCommunicationService", "Starting to receive file data, expected size: $fileSize bytes")
-
-            var totalBytesReceived: Long = 0
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-
-            FileOutputStream(tempFile).use { outputStream ->
-                while (totalBytesReceived < fileSize) {
-                    bytesRead = inputStream?.read(buffer, 0, minOf(buffer.size, (fileSize - totalBytesReceived).toInt())) ?: -1
-                    if (bytesRead == -1) break
-                    outputStream.write(buffer, 0, bytesRead)
-                    totalBytesReceived += bytesRead
-                    _fileTransferProgress.value = totalBytesReceived.toFloat() / fileSize
-                    Log.d("TcpCommunicationService", "Received $totalBytesReceived bytes out of $fileSize")
+            outputStream?.writeByte(type.value.toInt())
+            when (type) {
+                MessageType.CHAT_MESSAGE -> outputStream?.writeUTF(params[0] as String)
+                MessageType.FILE_TRANSFER_REQUEST -> {
+                    outputStream?.writeUTF(params[0] as String) // fileName
+                    outputStream?.writeLong(params[1] as Long) // fileSize
                 }
+                MessageType.FILE_TRANSFER_RESPONSE -> outputStream?.writeBoolean(params[0] as Boolean)
+                MessageType.FILE_DATA -> {
+                    val fileSize = params[0] as Long
+                    val inputStream = params[1] as InputStream
+                    outputStream?.writeLong(fileSize)
+                    var bytesWritten = 0L
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream?.writeInt(bytesRead)
+                        outputStream?.write(buffer, 0, bytesRead)
+                        bytesWritten += bytesRead
+                        _fileTransferProgress.value = bytesWritten.toFloat() / fileSize
+                    }
+                    outputStream?.writeInt(0) // Signal end of file
+                    _fileTransferProgress.value = 1f
+                    // Send FILE_TRANSFER_COMPLETED message after file data
+                    outputStream?.writeByte(MessageType.FILE_TRANSFER_COMPLETED.value.toInt())
+                    outputStream?.writeUTF(params[2] as String) // fileName
+                }
+                MessageType.END_CHAT -> { /* No additional data needed */ }
+                MessageType.CHAT_INVITATION -> {
+                    outputStream?.writeUTF(params[0] as String) // userId
+                    outputStream?.writeUTF(params[1] as String) // userName
+                }
+                MessageType.CHAT_INVITATION_RESPONSE -> outputStream?.writeBoolean(params[0] as Boolean)
+                MessageType.FILE_TRANSFER_COMPLETED -> outputStream?.writeUTF(params[0] as String) // fileName
+                MessageType.FILE_RECEIVED_NOTIFICATION -> outputStream?.writeUTF(params[0] as String) // fileName
             }
-
-            if (totalBytesReceived == fileSize) {
-                Log.d("TcpCommunicationService", "File receive complete. Total received: $totalBytesReceived")
-            } else {
-                throw IOException("File transfer incomplete. Received $totalBytesReceived out of $fileSize bytes")
-            }
+            outputStream?.flush()
         } catch (e: Exception) {
-            Log.e("TcpCommunicationService", "Error receiving file data: ${e.message}")
+            Log.e("TcpCommunicationService", "Error sending message: ${e.message}")
             throw e
-        } finally {
-            _fileTransferProgress.value = 0f
         }
     }
 
     suspend fun closeConnection() = withContext(Dispatchers.IO) {
+        serverJob?.cancel()
+        readJob?.cancel()
         try {
-            sendMessage(0x09.toByte(), "DISCONNECT")
+            outputStream?.close()
+            inputStream?.close()
+            clientSocket?.close()
+            serverSocket?.close()
         } catch (e: Exception) {
-            // Ignore exceptions when sending disconnect message
-        } finally {
-            _connectionState.value = ConnectionState.Disconnected
-
-            serverJob?.cancel()
-            readJob?.cancel()
-
-            launch {
-                try {
-                    outputStream?.close()
-                    inputStream?.close()
-                    clientSocket?.close()
-                    serverSocket?.close()
-                } catch (e: Exception) {
-                    Log.e("TcpCommunicationService", "Error closing connection: ${e.message}")
-                }
-            }
+            Log.e("TcpCommunicationService", "Error closing connection: ${e.message}")
         }
     }
 }
 
-enum class ConnectionState {
-    Connected, Disconnected
+sealed class ChatEvent {
+    object ChatEnded : ChatEvent()
+    data class ChatInvitationResponse(val accepted: Boolean) : ChatEvent()
 }

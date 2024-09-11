@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.chatapp.data.model.User
 import com.example.chatapp.data.repository.UserRepository
+import com.example.chatapp.network.UdpDiscoveryService
+import com.example.chatapp.network.TcpCommunicationService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +14,9 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val udpDiscoveryService: UdpDiscoveryService,
+    private val tcpCommunicationService: TcpCommunicationService
 ) : ViewModel() {
 
     private val _user = MutableStateFlow<User?>(null)
@@ -27,15 +31,20 @@ class SettingsViewModel @Inject constructor(
     private val _newPasswordError = MutableStateFlow<String?>(null)
     val newPasswordError: StateFlow<String?> = _newPasswordError
 
+    private val _showPasswordUpdatedDialog = MutableStateFlow(false)
+    val showPasswordUpdatedDialog: StateFlow<Boolean> = _showPasswordUpdatedDialog
+
+    private val _showLogoutConfirmDialog = MutableStateFlow(false)
+    val showLogoutConfirmDialog: StateFlow<Boolean> = _showLogoutConfirmDialog
+
     fun loadUser(userId: String) {
         viewModelScope.launch {
             _user.value = userRepository.getUserById(userId)
         }
     }
 
-    fun updatePassword(userId: String, oldPassword: String, newPassword: String, onComplete: () -> Unit) {
+    fun updatePassword(userId: String, oldPassword: String, newPassword: String) {
         if (!validateInput(oldPassword, newPassword)) {
-            onComplete()
             return
         }
 
@@ -46,10 +55,10 @@ class SettingsViewModel @Inject constructor(
                 userRepository.updateUser(updatedUser)
                 _settingsState.value = SettingsState.PasswordUpdated
                 _user.value = updatedUser
+                _showPasswordUpdatedDialog.value = true
             } else {
                 _settingsState.value = SettingsState.Error("Invalid old password")
             }
-            onComplete()
         }
     }
 
@@ -77,10 +86,42 @@ class SettingsViewModel @Inject constructor(
         _oldPasswordError.value = null
         _newPasswordError.value = null
     }
+
+    fun dismissPasswordUpdatedDialog() {
+        _showPasswordUpdatedDialog.value = false
+    }
+
+    fun showLogoutConfirmDialog() {
+        _showLogoutConfirmDialog.value = true
+    }
+
+    fun dismissLogoutConfirmDialog() {
+        _showLogoutConfirmDialog.value = false
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            // Stop UDP discovery service
+            udpDiscoveryService.stopDiscoveryServer()
+            udpDiscoveryService.clearDiscoveredUsers()
+
+            // Close TCP connections
+            tcpCommunicationService.closeConnection()
+
+            // Clear any other app state if necessary
+            // For example, clear any cached user data
+            _user.value = null
+
+            // You might want to clear any other app-wide state here
+
+            _settingsState.value = SettingsState.LoggedOut
+        }
+    }
 }
 
 sealed class SettingsState {
     data object Initial : SettingsState()
     data object PasswordUpdated : SettingsState()
     data class Error(val message: String) : SettingsState()
+    data object LoggedOut : SettingsState()
 }

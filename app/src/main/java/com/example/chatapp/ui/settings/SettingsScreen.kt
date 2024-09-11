@@ -14,7 +14,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
-import kotlinx.coroutines.flow.collectLatest
 
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,31 +29,17 @@ fun SettingsScreen(
     var newPassword by remember { mutableStateOf("") }
     val oldPasswordError by viewModel.oldPasswordError.collectAsState()
     val newPasswordError by viewModel.newPasswordError.collectAsState()
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val settingsState by viewModel.settingsState.collectAsState()
+    val showPasswordUpdatedDialog by viewModel.showPasswordUpdatedDialog.collectAsState()
+    val showLogoutConfirmDialog by viewModel.showLogoutConfirmDialog.collectAsState()
 
     LaunchedEffect(userId) {
         viewModel.loadUser(userId)
     }
 
-    LaunchedEffect(viewModel) {
-        viewModel.settingsState.collectLatest { state ->
-            when (state) {
-                is SettingsState.PasswordUpdated -> {
-                    isLoading = false
-                    errorMessage = null
-                    oldPassword = ""
-                    newPassword = ""
-                }
-                is SettingsState.Error -> {
-                    isLoading = false
-                    errorMessage = state.message
-                }
-                SettingsState.Initial -> {
-                    isLoading = false
-                    errorMessage = null
-                }
-            }
+    LaunchedEffect(settingsState) {
+        if (settingsState is SettingsState.LoggedOut) {
+            onLogout()
         }
     }
 
@@ -63,7 +48,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onClick = { onBackClick() }) {
+                    IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }
@@ -139,33 +124,65 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        isLoading = true
-                        errorMessage = null
-                        viewModel.updatePassword(currentUser.id, oldPassword, newPassword) {
-                            isLoading = false
-                        }
+                        viewModel.updatePassword(currentUser.id, oldPassword, newPassword)
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Update Password")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
-                onClick = onLogout,
+                onClick = { viewModel.showLogoutConfirmDialog() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Logout")
             }
-            if (isLoading) {
+            if (settingsState is SettingsState.Error) {
                 Spacer(modifier = Modifier.height(8.dp))
-                CircularProgressIndicator()
-            }
-            errorMessage?.let {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
+                Text(
+                    (settingsState as SettingsState.Error).message,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
         }
+    }
+
+    if (showPasswordUpdatedDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissPasswordUpdatedDialog() },
+            title = { Text("Password Updated") },
+            text = { Text("Your password has been successfully updated.") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.dismissPasswordUpdatedDialog()
+                    oldPassword = ""
+                    newPassword = ""
+                }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
+    if (showLogoutConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissLogoutConfirmDialog() },
+            title = { Text("Confirm Logout") },
+            text = { Text("Are you sure you want to logout?") },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.dismissLogoutConfirmDialog()
+                    viewModel.logout()
+                }) {
+                    Text("Yes")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { viewModel.dismissLogoutConfirmDialog() }) {
+                    Text("No")
+                }
+            }
+        )
     }
 }

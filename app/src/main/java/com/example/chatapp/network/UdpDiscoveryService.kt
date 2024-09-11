@@ -110,10 +110,6 @@ class UdpDiscoveryService @Inject constructor() {
         return discoveredUsers[userId]?.second
     }
 
-    fun getDiscoveredUsers(): List<Triple<String, String, String>> {
-        return discoveredUsers.map { (id, pair) -> Triple(id, pair.first, pair.second) }
-    }
-
     fun clearDiscoveredUsers() {
         discoveredUsers.clear()
     }
