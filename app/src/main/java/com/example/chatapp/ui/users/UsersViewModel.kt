@@ -29,7 +29,6 @@ class UsersViewModel @Inject constructor(
     val chatInvitation: StateFlow<Pair<String, String>?> = _chatInvitation
 
     private lateinit var currentUser: User
-    private val userIpMap = mutableMapOf<String, String>()
 
     fun initialize(userId: String) {
         viewModelScope.launch {
@@ -60,14 +59,12 @@ class UsersViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val discoveredDevices = udpDiscoveryService.discoverDevices(currentUser.id, currentUser.name)
-                val newUsers = discoveredDevices.map { (id, name, ip) ->
-                    userIpMap[id] = ip
+                _discoveredUsers.value = discoveredDevices.map { (id, name, _) ->
                     User(id = id, name = name)
                 }
-                _discoveredUsers.value = newUsers
                 // Update the database with discovered users
-                newUsers.forEach { user ->
-                    userRepository.insertOrUpdateUser(user.id, user.name)
+                discoveredDevices.forEach { (id, name, _) ->
+                    userRepository.insertOrUpdateUser(id, name)
                 }
             } catch (e: Exception) {
                 Log.e("ChatApp: UsersViewModel", "Error discovering devices: ${e.message}")
@@ -98,7 +95,7 @@ class UsersViewModel @Inject constructor(
 
     suspend fun connectToUser(userId: String): Boolean {
         return try {
-            val ip = userIpMap[userId] ?: throw Exception("IP address not found for user")
+            val ip = udpDiscoveryService.getUserIp(userId) ?: throw Exception("IP address not found for user")
             tcpCommunicationService.connectToUser(ip, currentUser.id)
         } catch (e: Exception) {
             Log.e("ChatApp: UsersViewModel", "Error connecting to user: ${e.message}")
@@ -107,7 +104,7 @@ class UsersViewModel @Inject constructor(
     }
 
     fun getUserIp(userId: String): String? {
-        return userIpMap[userId]
+        return udpDiscoveryService.getUserIp(userId)
     }
 
     fun acceptChatInvitation() {
@@ -141,6 +138,7 @@ class UsersViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         udpDiscoveryService.stopDiscoveryServer()
+        udpDiscoveryService.clearDiscoveredUsers()
         viewModelScope.launch {
             try {
                 tcpCommunicationService.closeConnection()

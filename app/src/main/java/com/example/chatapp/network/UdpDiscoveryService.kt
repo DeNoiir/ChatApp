@@ -19,6 +19,8 @@ class UdpDiscoveryService @Inject constructor() {
     private var serverJob: Job? = null
     private var serverSocket: DatagramSocket? = null
 
+    private val discoveredUsers = mutableMapOf<String, Pair<String, String>>()
+
     suspend fun discoverDevices(currentUserId: String, currentUserName: String): List<Triple<String, String, String>> = withContext(Dispatchers.IO) {
         val foundDevices = mutableListOf<Triple<String, String, String>>()
         try {
@@ -41,7 +43,11 @@ class UdpDiscoveryService @Inject constructor() {
                         if (message.startsWith(DISCOVERY_RESPONSE_PREFIX)) {
                             val parts = message.split(":")
                             if (parts.size == 3 && parts[1] != currentUserId) {
-                                foundDevices.add(Triple(parts[1], parts[2], receivePacket.address.hostAddress) as Triple<String, String, String>)
+                                val userId = parts[1]
+                                val userName = parts[2]
+                                val userIp = receivePacket.address.hostAddress
+                                foundDevices.add(Triple(userId, userName, userIp) as Triple<String, String, String>)
+                                discoveredUsers[userId] = Pair(userName, userIp) as Pair<String, String>
                             }
                         }
                     } catch (e: Exception) {
@@ -98,5 +104,17 @@ class UdpDiscoveryService @Inject constructor() {
         serverSocket?.close()
         serverSocket = null
         Log.d("ChatApp: UdpDiscoveryService", "Discovery server stopped")
+    }
+
+    fun getUserIp(userId: String): String? {
+        return discoveredUsers[userId]?.second
+    }
+
+    fun getDiscoveredUsers(): List<Triple<String, String, String>> {
+        return discoveredUsers.map { (id, pair) -> Triple(id, pair.first, pair.second) }
+    }
+
+    fun clearDiscoveredUsers() {
+        discoveredUsers.clear()
     }
 }
