@@ -21,23 +21,27 @@ import androidx.navigation.navArgument
 import com.example.chatapp.ui.chat.ChatScreen
 import com.example.chatapp.ui.login.LoginScreen
 import com.example.chatapp.ui.settings.SettingsScreen
-import com.example.chatapp.ui.theme.ChatAppTheme
 import com.example.chatapp.ui.users.UsersScreen
 import com.example.chatapp.ui.users.UsersViewModel
+import com.example.chatapp.ui.theme.ChatAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 
+/**
+ * 主活动类
+ * 负责应用程序的初始化、权限处理和主界面设置
+ */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    /**
+     * 权限请求启动器
+     */
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
             initializeApp()
-        } else {
-            // Handle the case where permissions are not granted
-            // You might want to show a dialog explaining why the permissions are necessary
         }
     }
 
@@ -51,16 +55,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * 检查所需权限是否已被授予
+     *
+     * @return 如果所有所需权限都已被授予则返回true，否则返回false
+     */
     private fun checkPermissions(): Boolean {
         return REQUIRED_PERMISSIONS.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
     }
 
+    /**
+     * 请求所需权限
+     */
     private fun requestPermissions() {
         requestPermissionLauncher.launch(REQUIRED_PERMISSIONS)
     }
 
+    /**
+     * 初始化应用程序
+     * 设置主界面内容
+     */
     private fun initializeApp() {
         setContent {
             ChatAppTheme {
@@ -75,6 +91,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /**
+         * 应用程序所需的权限列表
+         */
         private val REQUIRED_PERMISSIONS = arrayOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
@@ -85,6 +104,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * 聊天应用程序的主Composable函数
+ * 设置应用程序的导航结构
+ */
 @Composable
 fun ChatApp() {
     val navController = rememberNavController()

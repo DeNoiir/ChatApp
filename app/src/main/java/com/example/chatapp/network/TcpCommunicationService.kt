@@ -12,6 +12,10 @@ import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * TCP通信服务类
+ * 负责处理应用程序的TCP网络通信
+ */
 @Singleton
 class TcpCommunicationService @Inject constructor() {
     private val TCP_PORT = 9999
@@ -25,12 +29,17 @@ class TcpCommunicationService @Inject constructor() {
     private val _messageReceived = MutableSharedFlow<NetworkMessage>()
     val messageReceived = _messageReceived.asSharedFlow()
 
-    private val _fileTransferProgress = MutableStateFlow<Float>(0f)
+    private val _fileTransferProgress = MutableStateFlow(0f)
     val fileTransferProgress = _fileTransferProgress.asStateFlow()
 
     private val _chatEvent = MutableSharedFlow<ChatEvent>()
     val chatEvent = _chatEvent.asSharedFlow()
 
+    /**
+     * 启动TCP服务器
+     *
+     * @param onInvitationReceived 收到聊天邀请时的回调函数
+     */
     fun startServer(onInvitationReceived: (String, String) -> Unit) {
         serverJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -45,6 +54,12 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
+    /**
+     * 处理客户端连接
+     *
+     * @param socket 客户端socket
+     * @param onInvitationReceived 收到聊天邀请时的回调函数
+     */
     private suspend fun handleClient(socket: Socket, onInvitationReceived: (String, String) -> Unit) {
         withContext(Dispatchers.IO) {
             clientSocket = socket
@@ -68,6 +83,9 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
+    /**
+     * 开始读取接收到的消息
+     */
     private fun startReading() {
         readJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -118,12 +136,17 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
+    /**
+     * 读取文件数据
+     *
+     * @return 文件数据的字节数组
+     */
     private suspend fun readFileData(): ByteArray = withContext(Dispatchers.IO) {
         val baos = ByteArrayOutputStream()
         var totalBytesRead = 0L
         while (true) {
             val chunkSize = inputStream?.readInt() ?: break
-            if (chunkSize <= 0) break // End of file transfer
+            if (chunkSize <= 0) break
             val buffer = ByteArray(chunkSize)
             var bytesRead = 0
             while (bytesRead < chunkSize) {
@@ -139,6 +162,14 @@ class TcpCommunicationService @Inject constructor() {
         baos.toByteArray()
     }
 
+    /**
+     * 连接到指定用户
+     *
+     * @param ipAddress 目标用户的IP地址
+     * @param userId 当前用户ID
+     * @param userName 当前用户名
+     * @return 连接是否成功
+     */
     suspend fun connectToUser(ipAddress: String, userId: String, userName: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -155,14 +186,20 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
+    /**
+     * 发送消息
+     *
+     * @param type 消息类型
+     * @param params 消息参数
+     */
     suspend fun sendMessage(type: MessageType, vararg params: Any) = withContext(Dispatchers.IO) {
         try {
             outputStream?.writeByte(type.value.toInt())
             when (type) {
                 MessageType.CHAT_MESSAGE -> outputStream?.writeUTF(params[0] as String)
                 MessageType.FILE_TRANSFER_REQUEST -> {
-                    outputStream?.writeUTF(params[0] as String) // fileName
-                    outputStream?.writeLong(params[1] as Long) // fileSize
+                    outputStream?.writeUTF(params[0] as String)
+                    outputStream?.writeLong(params[1] as Long)
                 }
                 MessageType.FILE_TRANSFER_RESPONSE -> outputStream?.writeBoolean(params[0] as Boolean)
                 MessageType.FILE_DATA -> {
@@ -178,20 +215,19 @@ class TcpCommunicationService @Inject constructor() {
                         bytesWritten += bytesRead
                         _fileTransferProgress.value = bytesWritten.toFloat() / fileSize
                     }
-                    outputStream?.writeInt(0) // Signal end of file
+                    outputStream?.writeInt(0)
                     _fileTransferProgress.value = 1f
-                    // Send FILE_TRANSFER_COMPLETED message after file data
                     outputStream?.writeByte(MessageType.FILE_TRANSFER_COMPLETED.value.toInt())
-                    outputStream?.writeUTF(params[2] as String) // fileName
+                    outputStream?.writeUTF(params[2] as String)
                 }
-                MessageType.END_CHAT -> { /* No additional data needed */ }
+                MessageType.END_CHAT -> { }
                 MessageType.CHAT_INVITATION -> {
-                    outputStream?.writeUTF(params[0] as String) // userId
-                    outputStream?.writeUTF(params[1] as String) // userName
+                    outputStream?.writeUTF(params[0] as String)
+                    outputStream?.writeUTF(params[1] as String)
                 }
                 MessageType.CHAT_INVITATION_RESPONSE -> outputStream?.writeBoolean(params[0] as Boolean)
-                MessageType.FILE_TRANSFER_COMPLETED -> outputStream?.writeUTF(params[0] as String) // fileName
-                MessageType.FILE_RECEIVED_NOTIFICATION -> outputStream?.writeUTF(params[0] as String) // fileName
+                MessageType.FILE_TRANSFER_COMPLETED -> outputStream?.writeUTF(params[0] as String)
+                MessageType.FILE_RECEIVED_NOTIFICATION -> outputStream?.writeUTF(params[0] as String)
             }
             outputStream?.flush()
         } catch (e: Exception) {
@@ -200,6 +236,10 @@ class TcpCommunicationService @Inject constructor() {
         }
     }
 
+    /**
+     * 关闭连接
+     * 清理所有资源并关闭连接
+     */
     suspend fun closeConnection() = withContext(Dispatchers.IO) {
         serverJob?.cancel()
         readJob?.cancel()
@@ -214,7 +254,20 @@ class TcpCommunicationService @Inject constructor() {
     }
 }
 
+/**
+ * 聊天事件密封类
+ * 用于表示不同类型的聊天事件
+ */
 sealed class ChatEvent {
-    object ChatEnded : ChatEvent()
+    /**
+     * 聊天结束事件
+     */
+    data object ChatEnded : ChatEvent()
+
+    /**
+     * 聊天邀请响应事件
+     *
+     * @property accepted 是否接受邀请
+     */
     data class ChatInvitationResponse(val accepted: Boolean) : ChatEvent()
 }

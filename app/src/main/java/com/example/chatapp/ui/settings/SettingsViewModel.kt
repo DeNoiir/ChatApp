@@ -12,6 +12,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * 设置界面的 ViewModel
+ * 负责处理用户设置相关的业务逻辑
+ */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val userRepository: UserRepository,
@@ -37,12 +41,24 @@ class SettingsViewModel @Inject constructor(
     private val _showLogoutConfirmDialog = MutableStateFlow(false)
     val showLogoutConfirmDialog: StateFlow<Boolean> = _showLogoutConfirmDialog
 
+    /**
+     * 加载用户信息
+     *
+     * @param userId 用户ID
+     */
     fun loadUser(userId: String) {
         viewModelScope.launch {
             _user.value = userRepository.getUserById(userId)
         }
     }
 
+    /**
+     * 更新密码
+     *
+     * @param userId 用户ID
+     * @param oldPassword 旧密码
+     * @param newPassword 新密码
+     */
     fun updatePassword(userId: String, oldPassword: String, newPassword: String) {
         if (!validateInput(oldPassword, newPassword)) {
             return
@@ -57,23 +73,30 @@ class SettingsViewModel @Inject constructor(
                 _user.value = updatedUser
                 _showPasswordUpdatedDialog.value = true
             } else {
-                _settingsState.value = SettingsState.Error("Invalid old password")
+                _settingsState.value = SettingsState.Error("旧密码不正确")
             }
         }
     }
 
+    /**
+     * 验证密码输入
+     *
+     * @param oldPassword 旧密码
+     * @param newPassword 新密码
+     * @return 输入是否有效
+     */
     private fun validateInput(oldPassword: String, newPassword: String): Boolean {
         var isValid = true
 
         if (oldPassword.isBlank()) {
-            _oldPasswordError.value = "Old password cannot be empty"
+            _oldPasswordError.value = "旧密码不能为空"
             isValid = false
         } else {
             _oldPasswordError.value = null
         }
 
         if (newPassword.length < 6) {
-            _newPasswordError.value = "New password must be at least 6 characters long"
+            _newPasswordError.value = "新密码至少需要6个字符"
             isValid = false
         } else {
             _newPasswordError.value = null
@@ -82,46 +105,80 @@ class SettingsViewModel @Inject constructor(
         return isValid
     }
 
+    /**
+     * 清除错误信息
+     */
     fun clearErrors() {
         _oldPasswordError.value = null
         _newPasswordError.value = null
     }
 
+    /**
+     * 关闭密码更新成功对话框
+     */
     fun dismissPasswordUpdatedDialog() {
         _showPasswordUpdatedDialog.value = false
     }
 
+    /**
+     * 显示登出确认对话框
+     */
     fun showLogoutConfirmDialog() {
         _showLogoutConfirmDialog.value = true
     }
 
+    /**
+     * 关闭登出确认对话框
+     */
     fun dismissLogoutConfirmDialog() {
         _showLogoutConfirmDialog.value = false
     }
 
+    /**
+     * 执行登出操作
+     */
     fun logout() {
         viewModelScope.launch {
-            // Stop UDP discovery service
+            // 停止UDP发现服务
             udpDiscoveryService.stopDiscoveryServer()
             udpDiscoveryService.clearDiscoveredUsers()
 
-            // Close TCP connections
+            // 关闭TCP连接
             tcpCommunicationService.closeConnection()
 
-            // Clear any other app state if necessary
-            // For example, clear any cached user data
+            // 清除用户数据
             _user.value = null
 
-            // You might want to clear any other app-wide state here
+            // 可以在这里清除其他应用范围的状态
 
             _settingsState.value = SettingsState.LoggedOut
         }
     }
 }
 
+/**
+ * 设置状态
+ */
 sealed class SettingsState {
+    /**
+     * 初始状态
+     */
     data object Initial : SettingsState()
+
+    /**
+     * 密码已更新状态
+     */
     data object PasswordUpdated : SettingsState()
+
+    /**
+     * 错误状态
+     *
+     * @property message 错误信息
+     */
     data class Error(val message: String) : SettingsState()
+
+    /**
+     * 已登出状态
+     */
     data object LoggedOut : SettingsState()
 }

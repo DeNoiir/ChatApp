@@ -15,6 +15,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/**
+ * 设置界面的主要组件
+ *
+ * @param userId 当前用户ID
+ * @param viewModel 设置界面的ViewModel
+ * @param onLogout 登出回调函数
+ * @param onBackClick 返回按钮点击回调
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,10 +54,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = { Text("设置") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
@@ -72,9 +80,9 @@ fun SettingsScreen(
                                 """
                                 <html>
                                     <body>
-                                        <h2>User Information</h2>
-                                        <p><strong>Username:</strong> ${currentUser.name}</p>
-                                        <p><strong>User ID:</strong> ${currentUser.id}</p>
+                                        <h2>用户信息</h2>
+                                        <p><strong>用户名:</strong> ${currentUser.name}</p>
+                                        <p><strong>用户ID:</strong> ${currentUser.id}</p>
                                     </body>
                                 </html>
                                 """.trimIndent(),
@@ -94,7 +102,7 @@ fun SettingsScreen(
                         oldPassword = it
                         viewModel.clearErrors()
                     },
-                    label = { Text("Old Password") },
+                    label = { Text("旧密码") },
                     visualTransformation = PasswordVisualTransformation(),
                     isError = oldPasswordError != null,
                     supportingText = {
@@ -111,7 +119,7 @@ fun SettingsScreen(
                         newPassword = it
                         viewModel.clearErrors()
                     },
-                    label = { Text("New Password") },
+                    label = { Text("新密码") },
                     visualTransformation = PasswordVisualTransformation(),
                     isError = newPasswordError != null,
                     supportingText = {
@@ -128,7 +136,7 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Update Password")
+                    Text("更新密码")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -136,7 +144,7 @@ fun SettingsScreen(
                 onClick = { viewModel.showLogoutConfirmDialog() },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Logout")
+                Text("登出")
             }
             if (settingsState is SettingsState.Error) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -148,39 +156,45 @@ fun SettingsScreen(
         }
     }
 
+    /**
+     * 密码更新成功对话框
+     */
     if (showPasswordUpdatedDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissPasswordUpdatedDialog() },
-            title = { Text("Password Updated") },
-            text = { Text("Your password has been successfully updated.") },
+            title = { Text("密码已更新") },
+            text = { Text("您的密码已成功更新。") },
             confirmButton = {
                 Button(onClick = {
                     viewModel.dismissPasswordUpdatedDialog()
                     oldPassword = ""
                     newPassword = ""
                 }) {
-                    Text("OK")
+                    Text("确定")
                 }
             }
         )
     }
 
+    /**
+     * 登出确认对话框
+     */
     if (showLogoutConfirmDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissLogoutConfirmDialog() },
-            title = { Text("Confirm Logout") },
-            text = { Text("Are you sure you want to logout?") },
+            title = { Text("确认登出") },
+            text = { Text("您确定要登出吗？") },
             confirmButton = {
                 Button(onClick = {
                     viewModel.dismissLogoutConfirmDialog()
                     viewModel.logout()
                 }) {
-                    Text("Yes")
+                    Text("确定")
                 }
             },
             dismissButton = {
                 Button(onClick = { viewModel.dismissLogoutConfirmDialog() }) {
-                    Text("No")
+                    Text("取消")
                 }
             }
         )

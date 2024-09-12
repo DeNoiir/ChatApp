@@ -7,6 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +20,15 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.chatapp.data.model.Message
 import kotlinx.coroutines.launch
 
+/**
+ * 聊天界面的主要组件
+ *
+ * @param currentUserId 当前用户ID
+ * @param otherUserId 聊天对象的用户ID
+ * @param isReadOnly 是否为只读模式
+ * @param viewModel 聊天界面的ViewModel
+ * @param onBackClick 返回按钮点击回调
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -76,12 +88,12 @@ fun ChatScreen(
                 title = { Text(otherUserName) },
                 navigationIcon = {
                     IconButton(onClick = { showExitDialog = true }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
                 actions = {
                     IconButton(onClick = { showOptionsDialog = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Options")
+                        Icon(Icons.Default.MoreVert, contentDescription = "选项")
                     }
                 }
             )
@@ -131,33 +143,36 @@ fun ChatScreen(
                         },
                         enabled = chatState == ChatState.Active
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = "Send")
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
                     }
                     IconButton(
                         onClick = { filePickerLauncher.launch("*/*") },
                         enabled = chatState == ChatState.Active
                     ) {
-                        Icon(Icons.Default.AttachFile, contentDescription = "Send File")
+                        Icon(Icons.Default.AttachFile, contentDescription = "发送文件")
                     }
                 }
             }
         }
     }
 
+    /**
+     * 处理文件传输状态
+     */
     when (val state = fileTransferState) {
         is FileTransferState.AwaitingConfirmation -> {
             AlertDialog(
                 onDismissRequest = { viewModel.cancelFileTransfer() },
-                title = { Text("Confirm File Transfer") },
-                text = { Text("Do you want to send the file: ${state.fileName}?") },
+                title = { Text("确认文件传输") },
+                text = { Text("您要发送文件：${state.fileName}吗？") },
                 confirmButton = {
                     Button(onClick = { viewModel.confirmFileTransfer() }) {
-                        Text("Send")
+                        Text("发送")
                     }
                 },
                 dismissButton = {
                     Button(onClick = { viewModel.cancelFileTransfer() }) {
-                        Text("Cancel")
+                        Text("取消")
                     }
                 }
             )
@@ -165,21 +180,21 @@ fun ChatScreen(
         is FileTransferState.WaitingForAcceptance -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Waiting for Acceptance") },
-                text = { Text("Waiting for the other user to accept the file transfer...") },
+                title = { Text("等待接受") },
+                text = { Text("等待对方接受文件传输...") },
                 confirmButton = { }
             )
         }
         is FileTransferState.Sending -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Sending File") },
+                title = { Text("发送文件") },
                 text = {
                     Column {
-                        Text("Sending: ${state.fileName}")
+                        Text("正在发送：${state.fileName}")
                         LinearProgressIndicator(
-                            progress = state.progress,
-                            modifier = Modifier.fillMaxWidth()
+                            progress = { state.progress },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 },
@@ -189,13 +204,13 @@ fun ChatScreen(
         is FileTransferState.Receiving -> {
             AlertDialog(
                 onDismissRequest = { },
-                title = { Text("Receiving File") },
+                title = { Text("接收文件") },
                 text = {
                     Column {
-                        Text("Receiving: ${state.fileName}")
+                        Text("正在接收：${state.fileName}")
                         LinearProgressIndicator(
-                            progress = state.progress,
-                            modifier = Modifier.fillMaxWidth()
+                            progress = { state.progress },
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 },
@@ -205,16 +220,16 @@ fun ChatScreen(
         is FileTransferState.ReceivingRequest -> {
             AlertDialog(
                 onDismissRequest = { viewModel.rejectFileTransfer() },
-                title = { Text("File Transfer Request") },
-                text = { Text("Do you want to receive the file: ${state.fileName}?") },
+                title = { Text("文件传输请求") },
+                text = { Text("您要接收文件：${state.fileName}吗？") },
                 confirmButton = {
                     Button(onClick = { viewModel.acceptFileTransfer() }) {
-                        Text("Accept")
+                        Text("接受")
                     }
                 },
                 dismissButton = {
                     Button(onClick = { viewModel.rejectFileTransfer() }) {
-                        Text("Reject")
+                        Text("拒绝")
                     }
                 }
             )
@@ -227,63 +242,72 @@ fun ChatScreen(
         is FileTransferState.Error -> {
             AlertDialog(
                 onDismissRequest = { viewModel.resetFileTransferState() },
-                title = { Text("File Transfer Error") },
+                title = { Text("文件传输错误") },
                 text = { Text(state.message) },
                 confirmButton = {
                     Button(onClick = { viewModel.resetFileTransferState() }) {
-                        Text("OK")
+                        Text("确定")
                     }
                 }
             )
         }
         is FileTransferState.Idle -> {
-            // No dialog shown for Idle state
+            // 空闲状态，不显示对话框
         }
     }
 
+    /**
+     * 退出聊天确认对话框
+     */
     if (showExitDialog) {
         AlertDialog(
             onDismissRequest = { showExitDialog = false },
-            title = { Text("Exit Chat") },
-            text = { Text("Are you sure you want to exit the chat?") },
+            title = { Text("退出聊天") },
+            text = { Text("您确定要退出聊天吗？") },
             confirmButton = {
                 Button(onClick = {
                     showExitDialog = false
                     viewModel.endChat()
                 }) {
-                    Text("Yes")
+                    Text("确定")
                 }
             },
             dismissButton = {
                 Button(onClick = { showExitDialog = false }) {
-                    Text("No")
+                    Text("取消")
                 }
             }
         )
     }
 
+    /**
+     * 聊天结束提示对话框
+     */
     if (chatState == ChatState.Ended) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Chat Ended") },
-            text = { Text("The chat has ended.") },
+            title = { Text("聊天已结束") },
+            text = { Text("此次聊天已经结束。") },
             confirmButton = {
                 Button(onClick = { onBackClick() }) {
-                    Text("OK")
+                    Text("确定")
                 }
             }
         )
     }
 
+    /**
+     * 聊天选项对话框
+     */
     if (showOptionsDialog) {
         AlertDialog(
             onDismissRequest = { showOptionsDialog = false },
-            title = { Text("Chat Options") },
+            title = { Text("聊天选项") },
             text = {
                 Column {
-                    Text("Filter Messages:", style = MaterialTheme.typography.bodyLarge)
+                    Text("筛选消息:", style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(8.dp))
-                    FilterType.values().forEach { filterType ->
+                    FilterType.entries.forEach { filterType ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -308,19 +332,25 @@ fun ChatScreen(
                         },
                         modifier = Modifier.align(Alignment.End)
                     ) {
-                        Text("Clear All Messages")
+                        Text("清除所有消息")
                     }
                 }
             },
             confirmButton = {
                 Button(onClick = { showOptionsDialog = false }) {
-                    Text("Close")
+                    Text("关闭")
                 }
             }
         )
     }
 }
 
+/**
+ * 消息项组件
+ *
+ * @param message 消息对象
+ * @param isCurrentUser 是否为当前用户的消息
+ */
 @Composable
 fun MessageItem(message: Message, isCurrentUser: Boolean) {
     Row(
@@ -339,8 +369,8 @@ fun MessageItem(message: Message, isCurrentUser: Boolean) {
                 )
                 1 -> {
                     Column(modifier = Modifier.padding(8.dp)) {
-                        Icon(Icons.Default.InsertDriveFile, contentDescription = "File")
-                        Text(text = "File: ${message.content}")
+                        Icon(Icons.AutoMirrored.Filled.InsertDriveFile, contentDescription = "文件")
+                        Text(text = "文件: ${message.content}")
                     }
                 }
             }

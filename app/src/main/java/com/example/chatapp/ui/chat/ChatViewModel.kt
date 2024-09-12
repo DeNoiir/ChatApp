@@ -20,6 +20,10 @@ import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
 
+/**
+ * 聊天界面的 ViewModel
+ * 负责处理聊天相关的业务逻辑，包括消息发送、接收、文件传输等
+ */
 @HiltViewModel
 class ChatViewModel @Inject constructor(
     private val messageRepository: MessageRepository,
@@ -31,7 +35,7 @@ class ChatViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages
 
-    private val _otherUserName = MutableStateFlow<String>("")
+    private val _otherUserName = MutableStateFlow("")
     val otherUserName: StateFlow<String> = _otherUserName
 
     private val _chatState = MutableStateFlow<ChatState>(ChatState.Active)
@@ -67,15 +71,14 @@ class ChatViewModel @Inject constructor(
                             _chatState.value = ChatState.Ended
                         }
                     }
-                    else -> { /* Handle other events if needed */ }
+                    else -> { /* 处理其他事件（如果需要） */ }
                 }
             }
         }
 
         viewModelScope.launch {
             tcpCommunicationService.fileTransferProgress.collect { progress ->
-                val currentState = _fileTransferState.value
-                when (currentState) {
+                when (val currentState = _fileTransferState.value) {
                     is FileTransferState.Sending -> {
                         _fileTransferState.value = currentState.copy(progress = progress)
                     }
@@ -88,6 +91,12 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 初始化聊天
+     *
+     * @param currentUserId 当前用户ID
+     * @param otherUserId 聊天对象的用户ID
+     */
     fun initialize(currentUserId: String, otherUserId: String) {
         this.currentUserId = currentUserId
         this.otherUserId = otherUserId
@@ -95,6 +104,9 @@ class ChatViewModel @Inject constructor(
         loadOtherUserName(otherUserId)
     }
 
+    /**
+     * 加载消息历史
+     */
     private fun loadMessages(currentUserId: String, otherUserId: String) {
         viewModelScope.launch {
             messageRepository.getMessagesForUser(currentUserId, otherUserId).collect { messageList ->
@@ -107,12 +119,18 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 加载聊天对象的用户名
+     */
     private fun loadOtherUserName(otherUserId: String) {
         viewModelScope.launch {
             _otherUserName.value = userRepository.getUserById(otherUserId)?.name ?: ""
         }
     }
 
+    /**
+     * 发送文本消息
+     */
     fun sendMessage(content: String) {
         viewModelScope.launch {
             currentUserId?.let { senderId ->
@@ -130,17 +148,23 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 准备文件传输
+     */
     fun prepareFileTransfer(uri: Uri) {
         viewModelScope.launch {
             try {
                 val fileDetails = getFileDetails(uri)
                 _fileTransferState.value = FileTransferState.AwaitingConfirmation(fileDetails.first, fileDetails.second, uri)
             } catch (e: Exception) {
-                _fileTransferState.value = FileTransferState.Error("Error preparing file: ${e.message}")
+                _fileTransferState.value = FileTransferState.Error("准备文件时出错：${e.message}")
             }
         }
     }
 
+    /**
+     * 确认文件传输
+     */
     fun confirmFileTransfer() {
         viewModelScope.launch {
             val state = _fileTransferState.value
@@ -151,10 +175,16 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 取消文件传输
+     */
     fun cancelFileTransfer() {
         _fileTransferState.value = FileTransferState.Idle
     }
 
+    /**
+     * 发送文件
+     */
     private suspend fun sendFile(uri: Uri) {
         try {
             val fileDetails = getFileDetails(uri)
@@ -166,7 +196,7 @@ class ChatViewModel @Inject constructor(
 
             _fileTransferState.value = FileTransferState.Completed(fileDetails.first)
 
-            // Add file message to local database
+            // 将文件消息添加到本地数据库
             currentUserId?.let { senderId ->
                 otherUserId?.let { receiverId ->
                     val newMessage = Message(
@@ -180,10 +210,13 @@ class ChatViewModel @Inject constructor(
             }
 
         } catch (e: Exception) {
-            _fileTransferState.value = FileTransferState.Error("Error sending file: ${e.message}")
+            _fileTransferState.value = FileTransferState.Error("发送文件时出错：${e.message}")
         }
     }
 
+    /**
+     * 处理接收到的消息
+     */
     private suspend fun handleReceivedMessage(message: NetworkMessage) {
         when (message) {
             is NetworkMessage.ChatMessage -> {
@@ -213,7 +246,7 @@ class ChatViewModel @Inject constructor(
                 }
             }
             is NetworkMessage.FileData -> {
-                receiveFile(message.fileSize, message.data)
+                receiveFile(message.data)
             }
             is NetworkMessage.FileTransferCompleted -> {
                 _fileTransferState.value = FileTransferState.Completed(message.fileName)
@@ -230,12 +263,15 @@ class ChatViewModel @Inject constructor(
                 }
             }
             is NetworkMessage.FileReceivedNotification -> {
-                // This notification is now mainly for logging or additional actions if needed
-                // The main completion logic is already handled in the sending process
+                // 此通知主要用于日志记录或额外操作（如果需要）
+                // 主要的完成逻辑已在发送过程中处理
             }
         }
     }
 
+    /**
+     * 接受文件传输请求
+     */
     fun acceptFileTransfer() {
         viewModelScope.launch {
             tcpCommunicationService.sendMessage(MessageType.FILE_TRANSFER_RESPONSE, true)
@@ -246,6 +282,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 拒绝文件传输请求
+     */
     fun rejectFileTransfer() {
         viewModelScope.launch {
             tcpCommunicationService.sendMessage(MessageType.FILE_TRANSFER_RESPONSE, false)
@@ -253,7 +292,10 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    private suspend fun receiveFile(fileSize: Long, data: ByteArray) {
+    /**
+     * 接收文件
+     */
+    private suspend fun receiveFile(data: ByteArray) {
         withContext(Dispatchers.IO) {
             try {
                 val state = _fileTransferState.value
@@ -266,15 +308,18 @@ class ChatViewModel @Inject constructor(
                     _fileTransferState.value = FileTransferState.Completed(fileName, tempFile)
                     _fileSaveEvent.emit(FileSaveEvent(tempFile, fileName))
 
-                    // Send FILE_RECEIVED_NOTIFICATION
+                    // 发送文件接收通知
                     tcpCommunicationService.sendMessage(MessageType.FILE_RECEIVED_NOTIFICATION, fileName)
                 }
             } catch (e: Exception) {
-                _fileTransferState.value = FileTransferState.Error("Error receiving file: ${e.message}")
+                _fileTransferState.value = FileTransferState.Error("接收文件时出错：${e.message}")
             }
         }
     }
 
+    /**
+     * 保存接收到的文件
+     */
     fun saveFile(tempFile: File, destinationUri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -298,11 +343,14 @@ class ChatViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _fileTransferState.value = FileTransferState.Error("Error saving file: ${e.message}")
+                _fileTransferState.value = FileTransferState.Error("保存文件时出错：${e.message}")
             }
         }
     }
 
+    /**
+     * 结束聊天
+     */
     fun endChat() {
         viewModelScope.launch {
             if (!hasEndedChat) {
@@ -313,6 +361,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 获取文件详情
+     */
     private fun getFileDetails(uri: Uri): Pair<String, Long> {
         val cursor = context.contentResolver.query(uri, null, null, null, null)
         cursor?.use {
@@ -323,18 +374,27 @@ class ChatViewModel @Inject constructor(
             val size = it.getLong(sizeIndex)
             return Pair(name, size)
         }
-        throw IllegalStateException("Unable to get file details")
+        throw IllegalStateException("无法获取文件详情")
     }
 
+    /**
+     * 重置文件传输状态
+     */
     fun resetFileTransferState() {
         _fileTransferState.value = FileTransferState.Idle
     }
 
+    /**
+     * 设置消息过滤类型
+     */
     fun setFilterType(type: FilterType) {
         _filterType.value = type
         loadMessages(currentUserId ?: return, otherUserId ?: return)
     }
 
+    /**
+     * 清除所有消息
+     */
     fun clearAllMessages() {
         viewModelScope.launch {
             currentUserId?.let { senderId ->
@@ -346,6 +406,9 @@ class ChatViewModel @Inject constructor(
         }
     }
 
+    /**
+     * ViewModel 被清除时关闭连接
+     */
     override fun onCleared() {
         super.onCleared()
         viewModelScope.launch {
@@ -354,24 +417,104 @@ class ChatViewModel @Inject constructor(
     }
 }
 
+/**
+ * 聊天状态
+ */
 sealed class ChatState {
-    object Active : ChatState()
-    object Ended : ChatState()
+    data object Active : ChatState()
+    data object Ended : ChatState()
 }
 
+/**
+ * 文件传输状态
+ */
 sealed class FileTransferState {
-    object Idle : FileTransferState()
+    /**
+     * 空闲状态
+     */
+    data object Idle : FileTransferState()
+
+    /**
+     * 等待确认状态
+     *
+     * @property fileName 文件名
+     * @property fileSize 文件大小
+     * @property uri 文件URI
+     */
     data class AwaitingConfirmation(val fileName: String, val fileSize: Long, val uri: Uri) : FileTransferState()
+
+    /**
+     * 等待接受状态
+     *
+     * @property fileName 文件名
+     * @property uri 文件URI
+     */
     data class WaitingForAcceptance(val fileName: String, val uri: Uri) : FileTransferState()
+
+    /**
+     * 发送中状态
+     *
+     * @property fileName 文件名
+     * @property progress 发送进度
+     */
     data class Sending(val fileName: String, val progress: Float = 0f) : FileTransferState()
+
+    /**
+     * 接收中状态
+     *
+     * @property fileName 文件名
+     * @property progress 接收进度
+     */
     data class Receiving(val fileName: String, val progress: Float = 0f) : FileTransferState()
+
+    /**
+     * 接收请求状态
+     *
+     * @property fileName 文件名
+     * @property fileSize 文件大小
+     */
     data class ReceivingRequest(val fileName: String, val fileSize: Long) : FileTransferState()
+
+    /**
+     * 完成状态
+     *
+     * @property fileName 文件名
+     * @property tempFile 临时文件（可为空）
+     */
     data class Completed(val fileName: String, val tempFile: File? = null) : FileTransferState()
+
+    /**
+     * 错误状态
+     *
+     * @property message 错误信息
+     */
     data class Error(val message: String) : FileTransferState()
 }
 
+/**
+ * 消息过滤类型
+ */
 enum class FilterType {
-    ALL, TEXT, FILE
+    /**
+     * 所有消息
+     */
+    ALL,
+
+    /**
+     * 仅文本消息
+     */
+    TEXT,
+
+    /**
+     * 仅文件消息
+     */
+    FILE
 }
 
+/**
+ * 文件保存事件
+ *
+ * @property tempFile 临时文件
+ * @property fileName 文件名
+ */
 data class FileSaveEvent(val tempFile: File, val fileName: String)

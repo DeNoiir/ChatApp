@@ -9,6 +9,10 @@ import java.net.BindException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * UDP发现服务类
+ * 负责在局域网中发现其他设备并响应发现请求
+ */
 @Singleton
 class UdpDiscoveryService @Inject constructor() {
     private val DISCOVERY_PORT = 8888
@@ -21,6 +25,13 @@ class UdpDiscoveryService @Inject constructor() {
 
     private val discoveredUsers = mutableMapOf<String, Pair<String, String>>()
 
+    /**
+     * 发现局域网内的设备
+     *
+     * @param currentUserId 当前用户ID
+     * @param currentUserName 当前用户名
+     * @return 发现的设备列表，每个元素包含用户ID、用户名和IP地址
+     */
     suspend fun discoverDevices(currentUserId: String, currentUserName: String): List<Triple<String, String, String>> = withContext(Dispatchers.IO) {
         val foundDevices = mutableListOf<Triple<String, String, String>>()
         try {
@@ -62,6 +73,13 @@ class UdpDiscoveryService @Inject constructor() {
         foundDevices
     }
 
+    /**
+     * 启动发现服务器
+     * 响应其他设备的发现请求
+     *
+     * @param currentUserId 当前用户ID
+     * @param currentUserName 当前用户名
+     */
     @Synchronized
     fun startDiscoveryServer(currentUserId: String, currentUserName: String) {
         if (serverJob?.isActive == true) {
@@ -98,6 +116,9 @@ class UdpDiscoveryService @Inject constructor() {
         }
     }
 
+    /**
+     * 停止发现服务器
+     */
     @Synchronized
     fun stopDiscoveryServer() {
         serverJob?.cancel()
@@ -106,10 +127,19 @@ class UdpDiscoveryService @Inject constructor() {
         Log.d("ChatApp: UdpDiscoveryService", "Discovery server stopped")
     }
 
+    /**
+     * 获取指定用户的IP地址
+     *
+     * @param userId 用户ID
+     * @return 用户的IP地址，如果未找到则返回null
+     */
     fun getUserIp(userId: String): String? {
         return discoveredUsers[userId]?.second
     }
 
+    /**
+     * 清除已发现的用户列表
+     */
     fun clearDiscoveredUsers() {
         discoveredUsers.clear()
     }

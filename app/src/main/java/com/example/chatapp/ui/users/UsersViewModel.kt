@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/**
+ * 用户列表界面的 ViewModel
+ * 负责处理用户列表、设备发现和聊天邀请等功能
+ */
 @HiltViewModel
 class UsersViewModel @Inject constructor(
     private val userRepository: UserRepository,
@@ -34,7 +38,6 @@ class UsersViewModel @Inject constructor(
     val chatInvitationState: StateFlow<ChatInvitationState> = _chatInvitationState
 
     private val _chatEvent = MutableSharedFlow<ChatEvent>()
-    val chatEvent = _chatEvent.asSharedFlow()
 
     private val _navigateToChatEvent = MutableSharedFlow<String>()
     val navigateToChatEvent = _navigateToChatEvent.asSharedFlow()
@@ -44,20 +47,28 @@ class UsersViewModel @Inject constructor(
 
     private lateinit var currentUser: User
 
+    /**
+     * 初始化 ViewModel
+     *
+     * @param userId 当前用户ID
+     */
     fun initialize(userId: String) {
         viewModelScope.launch {
             try {
-                currentUser = userRepository.getUserById(userId) ?: throw Exception("User not found")
+                currentUser = userRepository.getUserById(userId) ?: throw Exception("未找到用户")
                 loadUsers()
                 startDiscoveryServer()
                 startTcpServer()
                 collectTcpEvents()
             } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error initializing: ${e.message}")
+                Log.e("ChatApp: UsersViewModel", "初始化错误: ${e.message}")
             }
         }
     }
 
+    /**
+     * 加载用户列表
+     */
     private fun loadUsers() {
         viewModelScope.launch {
             userRepository.getAllUsers().collect { userList ->
@@ -66,6 +77,9 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 发现设备
+     */
     fun discoverDevices() {
         viewModelScope.launch {
             try {
@@ -73,20 +87,26 @@ class UsersViewModel @Inject constructor(
                 _discoveredUsers.value = discoveredDevices.map { (id, name, _) ->
                     User(id = id, name = name)
                 }
-                // Update the database with discovered users
+                // 更新数据库中的已发现用户
                 discoveredDevices.forEach { (id, name, _) ->
                     userRepository.insertOrUpdateUser(id, name)
                 }
             } catch (e: Exception) {
-                Log.e("ChatApp: UsersViewModel", "Error discovering devices: ${e.message}")
+                Log.e("ChatApp: UsersViewModel", "发现设备错误: ${e.message}")
             }
         }
     }
 
+    /**
+     * 启动发现服务器
+     */
     private fun startDiscoveryServer() {
         udpDiscoveryService.startDiscoveryServer(currentUser.id, currentUser.name)
     }
 
+    /**
+     * 启动TCP服务器
+     */
     private fun startTcpServer() {
         tcpCommunicationService.startServer { userId, userName ->
             viewModelScope.launch {
@@ -95,6 +115,9 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 收集TCP事件
+     */
     private fun collectTcpEvents() {
         viewModelScope.launch {
             tcpCommunicationService.chatEvent.collect { event ->
@@ -116,6 +139,11 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 发送聊天邀请
+     *
+     * @param userId 被邀请用户的ID
+     */
     fun sendChatInvitation(userId: String) {
         viewModelScope.launch {
             try {
@@ -123,20 +151,17 @@ class UsersViewModel @Inject constructor(
                 if (ip != null && tcpCommunicationService.connectToUser(ip, currentUser.id, currentUser.name)) {
                     _chatInvitationState.value = ChatInvitationState.Sent(userId)
                 } else {
-                    _chatInvitationState.value = ChatInvitationState.Error("Failed to connect to user")
+                    _chatInvitationState.value = ChatInvitationState.Error("无法连接到用户")
                 }
             } catch (e: Exception) {
-                _chatInvitationState.value = ChatInvitationState.Error("Error sending chat invitation: ${e.message}")
+                _chatInvitationState.value = ChatInvitationState.Error("发送聊天邀请时出错：${e.message}")
             }
         }
     }
 
-    fun viewChatHistory(userId: String) {
-        viewModelScope.launch {
-            _navigateToChatEvent.emit(userId)
-        }
-    }
-
+    /**
+     * 接受聊天邀请
+     */
     fun acceptChatInvitation() {
         viewModelScope.launch {
             val state = _chatInvitationState.value
@@ -148,6 +173,9 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 拒绝聊天邀请
+     */
     fun rejectChatInvitation() {
         viewModelScope.launch {
             tcpCommunicationService.sendMessage(MessageType.CHAT_INVITATION_RESPONSE, false)
@@ -156,14 +184,23 @@ class UsersViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 重置聊天邀请状态
+     */
     fun resetChatInvitationState() {
         _chatInvitationState.value = ChatInvitationState.None
     }
 
+    /**
+     * 关闭拒绝对话框
+     */
     fun dismissRejectionDialog() {
         _showRejectionDialog.value = false
     }
 
+    /**
+     * ViewModel 被清除时的操作
+     */
     override fun onCleared() {
         super.onCleared()
         udpDiscoveryService.stopDiscoveryServer()
@@ -174,9 +211,34 @@ class UsersViewModel @Inject constructor(
     }
 }
 
+/**
+ * 聊天邀请状态
+ */
 sealed class ChatInvitationState {
-    object None : ChatInvitationState()
+    /**
+     * 无邀请状态
+     */
+    data object None : ChatInvitationState()
+
+    /**
+     * 已发送邀请状态
+     *
+     * @property userId 被邀请用户的ID
+     */
     data class Sent(val userId: String) : ChatInvitationState()
+
+    /**
+     * 收到邀请状态
+     *
+     * @property userId 发送邀请用户的ID
+     * @property userName 发送邀请用户的名称
+     */
     data class Received(val userId: String, val userName: String) : ChatInvitationState()
+
+    /**
+     * 错误状态
+     *
+     * @property message 错误信息
+     */
     data class Error(val message: String) : ChatInvitationState()
 }

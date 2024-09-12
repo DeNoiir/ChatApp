@@ -11,6 +11,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 
+/**
+ * 登录界面组件
+ *
+ * @param viewModel 登录界面的ViewModel
+ * @param onLoginSuccess 登录成功的回调函数
+ */
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
@@ -28,7 +34,7 @@ fun LoginScreen(
                 onLoginSuccess((loginState as LoginState.LoginSuccess).user.id)
             }
             is LoginState.RegisterSuccess -> {
-                // Do not navigate immediately, wait for user to dismiss the dialog
+                // 不立即导航，等待用户关闭对话框
             }
             else -> {}
         }
@@ -43,7 +49,7 @@ fun LoginScreen(
     ) {
         Icon(
             imageVector = Icons.AutoMirrored.Filled.Login,
-            contentDescription = "Login",
+            contentDescription = "登录",
             modifier = Modifier.size(100.dp),
             tint = MaterialTheme.colorScheme.primary
         )
@@ -56,7 +62,7 @@ fun LoginScreen(
                 username = it
                 viewModel.clearErrors()
             },
-            label = { Text("Username") },
+            label = { Text("用户名") },
             isError = usernameError != null,
             supportingText = {
                 if (usernameError != null) {
@@ -74,7 +80,7 @@ fun LoginScreen(
                 password = it
                 viewModel.clearErrors()
             },
-            label = { Text("Password") },
+            label = { Text("密码") },
             visualTransformation = PasswordVisualTransformation(),
             isError = passwordError != null,
             supportingText = {
@@ -91,7 +97,7 @@ fun LoginScreen(
             onClick = { viewModel.loginOrRegister(username, password) },
             modifier = Modifier.widthIn(min = 200.dp, max = 300.dp)
         ) {
-            Text("Login / Register")
+            Text("登录 / 注册")
         }
 
         if (loginState is LoginState.Error) {
@@ -106,8 +112,8 @@ fun LoginScreen(
     if (loginState is LoginState.RegisterSuccess) {
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Registration Successful") },
-            text = { Text("Your account has been created successfully.") },
+            title = { Text("注册成功") },
+            text = { Text("您的账户已成功创建。") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -115,7 +121,7 @@ fun LoginScreen(
                         onLoginSuccess((loginState as LoginState.RegisterSuccess).user.id)
                     }
                 ) {
-                    Text("OK")
+                    Text("确定")
                 }
             }
         )
